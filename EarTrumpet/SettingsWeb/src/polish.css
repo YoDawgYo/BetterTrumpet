@@ -1,13 +1,26 @@
 /* Polish enhancements for Sage Glass settings */
 
-/* Section cards: static glass, no hover brightening */
+/* Section cards: static glass, no hover brightening.
+   The cards sit above the animated dither canvas, so the backdrop blur is
+   recomputed every frame: keep the radius modest, and drop it entirely in eco
+   mode / reduced transparency where a more opaque tint stands in for it. */
 .section-polished {
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(10px);
   transition-timing-function: cubic-bezier(.2,0,0,1);
 }
 
+.eco-active .section-polished {
+  backdrop-filter: none;
+  background-color: rgba(22, 18, 32, .84) !important;
+}
+
+.eco-active .mobile-header-polished {
+  backdrop-filter: none;
+}
+
 @media (prefers-reduced-transparency: reduce) {
-  .section-polished {
+  .section-polished,
+  .mobile-header-polished {
     backdrop-filter: none;
   }
 }
@@ -17,7 +30,9 @@
   transition: none;
 }
 
-.setting-row-polished:focus-within {
+/* Keyboard focus only: a mouse click on a row's switch must not leave the
+   whole row outlined. */
+.setting-row-polished:has(:focus-visible) {
   outline: 2px solid #9b7bea;
   outline-offset: -2px;
 }
@@ -116,9 +131,20 @@
   transform: scale(0.98);
 }
 
-/* Caption chrome: quiet ghost buttons, tuned down to live in the shell.
-   Barely-there at rest, whisper on hover; the close button keeps only a
-   muted red veil instead of a full-bleed system-red block. */
+/* Caption chrome: quiet ghost buttons on a faint dark backdrop so they stay
+   legible on the bright atmosphere gradient. Whisper on hover; the close
+   button keeps only a muted red veil instead of a full-bleed system-red block. */
+.window-controls-polished {
+  padding: 2px;
+  border-radius: 10px;
+  background: rgba(8, 7, 18, .26);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+
+.window-controls-polished .window-button-polished {
+  margin-right: 0;
+}
+
 .window-button-polished {
   min-width: 36px !important;
   width: 36px !important;
@@ -126,12 +152,12 @@
   height: 28px !important;
   padding: 0 !important;
   margin-right: 2px;
-  border-radius: 10px !important;
+  border-radius: 8px !important;
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   backdrop-filter: none;
-  color: rgba(244, 247, 245, .38) !important;
+  color: rgba(244, 247, 245, .62) !important;
   transition: color 140ms cubic-bezier(.33,1,.68,1), background-color 140ms cubic-bezier(.33,1,.68,1) !important;
 }
 
@@ -140,8 +166,8 @@
 }
 
 .window-button-polished:hover {
-  color: rgba(244, 247, 245, .85) !important;
-  background-color: rgba(255, 255, 255, .07) !important;
+  color: rgba(244, 247, 245, .92) !important;
+  background-color: rgba(255, 255, 255, .08) !important;
   box-shadow: none !important;
 }
 
@@ -169,15 +195,29 @@
   transition-timing-function: cubic-bezier(.33,1,.68,1);
 }
 
+/* Nav scrollbar: invisible at rest, a thin neutral thumb on hover. Only a
+   fallback — the nav is sized to fit all pages at the default window height. */
 .sidebar-polished nav {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.sidebar-polished nav:hover {
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
 }
 
 .sidebar-polished nav::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+  width: 4px;
+}
+
+.sidebar-polished nav::-webkit-scrollbar-thumb {
+  min-height: 24px;
+  background: transparent;
+  border: 0;
+}
+
+.sidebar-polished nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .18);
 }
 
 .logo-polished {
@@ -204,10 +244,6 @@
   transition-duration: 60ms;
 }
 
-.category-polished:last-child {
-  margin-bottom: 8px;
-}
-
 .category-title-polished {
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -228,9 +264,15 @@
   transition-duration: 60ms;
 }
 
+/* The selected capsule is the shared sliding pill behind the button; hover
+   only adds a faint veil on top of it. */
+.nav-button-selected-polished,
 .nav-button-selected-polished:hover {
-  background-color: rgba(255,255,255,.12) !important;
-  color: #F4F7F5 !important;
+  color: #fff !important;
+}
+
+.nav-button-selected-polished:hover {
+  background-color: rgba(255,255,255,.03) !important;
 }
 
 .classic-button-polished {

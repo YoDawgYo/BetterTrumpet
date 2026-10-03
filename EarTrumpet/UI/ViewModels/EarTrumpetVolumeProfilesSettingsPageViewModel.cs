@@ -209,14 +209,18 @@ namespace EarTrumpet.UI.ViewModels
             Trace.WriteLine($"VolumeProfilesVM: Renamed profile to '{name}'");
         }
 
-        private void ApplySelectedProfile()
+        private void ApplySelectedProfile() => ApplySelectedProfile(confirm: true);
+
+        // The web settings window applies presets without a WPF MessageBox; the
+        // classic window keeps its confirmation prompt.
+        public void ApplySelectedProfile(bool confirm)
         {
             if (_selectedProfile == null) return;
 
             var collection = GetCollectionViewModel();
             if (collection == null) return;
 
-            var result = MessageBox.Show(
+            var result = !confirm ? MessageBoxResult.Yes : MessageBox.Show(
                 $"Apply QuickTrumpet preset \"{_selectedProfile.Name}\"?\n\n" +
                 (_selectedProfile.ApplyAppsOnly
                     ? "This will only change matching app volumes and mute states."
@@ -233,11 +237,14 @@ namespace EarTrumpet.UI.ViewModels
             }
         }
 
-        private void DeleteSelectedProfile()
+        private void DeleteSelectedProfile() => DeleteSelectedProfile(confirm: true);
+
+        // The web settings window confirms inline before sending the action.
+        public void DeleteSelectedProfile(bool confirm)
         {
             if (_selectedProfile == null) return;
 
-            var result = MessageBox.Show(
+            var result = !confirm ? MessageBoxResult.Yes : MessageBox.Show(
                 $"Delete QuickTrumpet preset \"{_selectedProfile.Name}\"?",
                 "Delete QuickTrumpet Preset",
                 MessageBoxButton.YesNo,

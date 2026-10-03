@@ -1,16 +1,20 @@
-import { useState, useEffect, useRef } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button, Input, Spinner, Switch, Text, mergeClasses } from "@fluentui/react-components";
 import {
   ActivityIcon,
   ArrowLeftRightIcon,
   BlendIcon,
+  BookmarkPlusIcon,
   CheckIcon,
   ChevronDownIcon,
   EyeOffIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   FileTextIcon,
   FolderIcon,
+  FolderPlusIcon,
   GithubIcon,
   InfoIcon,
   KeyboardIcon,
@@ -24,14 +28,17 @@ import {
   SaveIcon,
   SettingsIcon,
   ShieldCheckIcon,
+  ShuffleIcon,
   SlidersHorizontalIcon,
   Trash2Icon,
   TriangleAlertIcon,
   UploadIcon,
   Volume2Icon,
+  XIcon,
 } from "@animateicons/react/lucide";
 import ElasticSlider from "./components/ElasticSlider";
 import type { AppRule, SettingKey, SettingsPageDescriptor, SettingsPayload, SettingValue } from "./types";
+import "./pages.css";
 
 type Styles = Record<string, string>;
 type Action = (name: string, data?: Record<string, unknown>) => void;
@@ -48,6 +55,34 @@ interface PageProps {
 }
 
 const t = (payload: SettingsPayload, key: string, fallback: string) => payload.labels[key] || fallback;
+
+// ── Motion vocabulary ─────────────────────────────────────────────────────────
+// One decelerating curve for every reveal/list change; durations collapse to 0
+// under prefers-reduced-motion.
+const EASE = [0.33, 1, 0.68, 1] as const;
+const FLASH_MS = 1600;
+const CONFIRM_MS = 3000;
+const COLOR_SEND_INTERVAL_MS = 120;
+
+const timing = (reduce: boolean | null, duration = 0.2) => ({ duration: reduce ? 0 : duration, ease: EASE });
+
+/** Enter: fade + 6px rise with height grow. Exit: fade + collapse. */
+const itemMotion = (reduce: boolean | null) => ({
+  initial: { opacity: 0, y: reduce ? 0 : 6, height: 0, overflow: "hidden" },
+  animate: { opacity: 1, y: 0, height: "auto", transitionEnd: { overflow: "visible" } },
+  exit: { opacity: 0, height: 0, overflow: "hidden" },
+  transition: timing(reduce),
+});
+
+const stop = (event: MouseEvent) => event.stopPropagation();
+
+/** Accordion headers toggle on Enter/Space only when the header itself has focus. */
+const headerKeys = (event: KeyboardEvent<HTMLElement>, onToggle: () => void) => {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onToggle(); }
+};
+
+const sameText = (a?: string, b?: string) => (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
 
 export function SettingsPage(props: PageProps) {
   const { page, styles } = props;
@@ -77,271 +112,400 @@ function renderPage(props: PageProps) {
   }
 }
 
+// ── Shared building blocks ────────────────────────────────────────────────────
+
 function Section({ title, description, styles, children, anchor }: { icon?: ReactNode; title: string; description?: string; styles: Styles; children: ReactNode; anchor?: string }) {
   return <section id={anchor} className={`${styles.section} section-polished`}><header className={styles.sectionHeader}><Text className={styles.sectionTitle} as="h2" size={400} weight="semibold">{title}</Text>{description && <Text className={styles.sectionDescription} size={200}>{description}</Text>}</header><div className={styles.settingList}>{children}</div></section>;
 }
 
-function ToggleRow({ payload, styles, settingKey, label, description, disabled, setSetting }: { payload: SettingsPayload; styles: Styles; settingKey: SettingKey; label: string; description?: string; disabled?: boolean; setSetting?: SetSetting }) {
+/** Height + opacity reveal for conditional blocks (accordion panels, dependent settings). */
+function Reveal({ open, children, className }: { open: boolean; children: ReactNode; className?: string }) {
+  const reduce = useReducedMotion();
+  return <AnimatePresence initial={false}>
+    {open && <motion.div
+      key="reveal"
+      className={className}
+      initial={{ height: 0, opacity: 0, overflow: "hidden" }}
+      animate={{ height: "auto", opacity: 1, transitionEnd: { overflow: "visible" } }}
+      exit={{ height: 0, opacity: 0, overflow: "hidden" }}
+      transition={timing(reduce)}
+    >{children}</motion.div>}
+  </AnimatePresence>;
+}
+
+function ToggleRow({ payload, styles, settingKey, label, description, disabled, setSetting, className }: { payload: SettingsPayload; styles: Styles; settingKey: SettingKey; label: string; description?: string; disabled?: boolean; setSetting?: SetSetting; className?: string }) {
   const checked = Boolean(payload.values[settingKey]);
   const update = setSetting ?? ((key: SettingKey, value: SettingValue) => window.chrome?.webview?.postMessage({ type: "setSetting", key, value }));
-  return <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`setting-${settingKey}`}><div className={styles.settingCopy}><Text weight="semibold">{label}</Text>{description && <Text className={styles.settingDescription} size={200}>{description}</Text>}</div><Switch id={`setting-${settingKey}`} checked={checked} disabled={disabled} aria-label={label} onChange={(_, data) => update(settingKey, data.checked)} /></label>;
+  return <label className={mergeClasses(styles.settingRow, "setting-row-polished", className)} htmlFor={`setting-${settingKey}`}><div className={styles.settingCopy}><Text weight="semibold">{label}</Text>{description && <Text className={styles.settingDescription} size={200}>{description}</Text>}</div><Switch id={`setting-${settingKey}`} checked={checked} disabled={disabled} aria-label={label} onChange={(_, data) => update(settingKey, data.checked)} /></label>;
 }
 
-function RangeRow({ styles, label, description, value, min, max, step = 1, suffix = "", onCommit }: { styles: Styles; label: string; description?: string; value: number; min: number; max: number; step?: number; suffix?: string; onCommit: (value: number) => void }) {
-  return <div className={`${styles.settingRow} setting-row-polished`}><div className={styles.settingCopy}><Text weight="semibold">{label}</Text>{description && <Text className={styles.settingDescription} size={200}>{description}</Text>}</div><ElasticSlider className={styles.range} value={value} startingValue={min} maxValue={max} isStepped stepSize={step} suffix={suffix} ariaLabel={label} leftIcon={<MinusIcon size={15} />} rightIcon={<PlusIcon size={15} />} onCommit={onCommit} /></div>;
+function RangeRow({ payload, styles, label, description, value, min, max, step = 1, suffix = "", disabled, onChange, onCommit }: { payload: SettingsPayload; styles: Styles; label: string; description?: string; value: number; min: number; max: number; step?: number; suffix?: string; disabled?: boolean; onChange?: (value: number) => void; onCommit: (value: number) => void }) {
+  return <div className={mergeClasses(styles.settingRow, "setting-row-polished", disabled && "bt-row-disabled")}><div className={styles.settingCopy}><Text weight="semibold">{label}</Text>{description && <Text className={styles.settingDescription} size={200}>{description}</Text>}</div><ElasticSlider className={styles.range} value={value} startingValue={min} maxValue={max} isStepped stepSize={step} suffix={suffix} locale={payload.locale} disabled={disabled} ariaLabel={label} leftIcon={<MinusIcon size={15} />} rightIcon={<PlusIcon size={15} />} onChange={onChange} onCommit={onCommit} /></div>;
 }
 
-function InlineRange({ styles, label, value, onCommit }: { styles: Styles; label: string; value: number; onCommit: (value: number) => void }) {
-  return <ElasticSlider className={styles.inlineRange} value={value} startingValue={0} maxValue={100} isStepped stepSize={1} suffix="%" ariaLabel={label} leftIcon={<MinusIcon size={15} />} rightIcon={<PlusIcon size={15} />} onCommit={onCommit} />;
+function InlineRange({ payload, styles, label, value, onCommit }: { payload: SettingsPayload; styles: Styles; label: string; value: number; onCommit: (value: number) => void }) {
+  return <ElasticSlider className={styles.inlineRange} value={value} startingValue={0} maxValue={100} isStepped stepSize={1} suffix="%" locale={payload.locale} ariaLabel={label} leftIcon={<MinusIcon size={15} />} rightIcon={<PlusIcon size={15} />} onCommit={onCommit} />;
 }
 
-function SelectRow({ styles, label, description, value, options, onChange }: { styles: Styles; label: string; description?: string; value: number; options: { value: number; label: string }[]; onChange: (value: number) => void }) {
-  return <div className={`${styles.settingRow} setting-row-polished`}><div className={styles.settingCopy}><Text weight="semibold">{label}</Text>{description && <Text className={styles.settingDescription} size={200}>{description}</Text>}</div><select className={`${styles.select} select-polished`} value={value} aria-label={label} onChange={event => onChange(Number(event.currentTarget.value))}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>;
+function SelectRow({ styles, label, description, value, options, disabled, onChange }: { styles: Styles; label: string; description?: string; value: number; options: { value: number; label: string }[]; disabled?: boolean; onChange: (value: number) => void }) {
+  return <div className={mergeClasses(styles.settingRow, "setting-row-polished", disabled && "bt-row-disabled")}><div className={styles.settingCopy}><Text weight="semibold">{label}</Text>{description && <Text className={styles.settingDescription} size={200}>{description}</Text>}</div><select className={mergeClasses(styles.select, "select-polished", "bt-select")} value={value} disabled={disabled} aria-disabled={disabled || undefined} aria-label={label} onChange={event => onChange(Number(event.currentTarget.value))}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>;
 }
 
 function ListRow({ styles, title, meta, badge, actions }: { styles: Styles; title: string; meta?: string; badge?: ReactNode; actions: ReactNode }) {
   return <div className={styles.listRow}><div className="list-row-copy"><div className="list-row-title"><Text weight="semibold">{title}</Text>{badge}</div>{meta && <Text className={styles.listMeta} size={200}>{meta}</Text>}</div><div className={styles.rowActions}>{actions}</div></div>;
 }
 
-function Empty({ payload, styles }: { payload: SettingsPayload; styles: Styles }) { return <Text className={styles.empty}>{t(payload, "empty", "Nothing configured yet.")}</Text>; }
+function Empty({ payload, styles, text }: { payload: SettingsPayload; styles: Styles; text?: string }) { return <Text className={mergeClasses(styles.empty, "bt-empty")}>{text ?? t(payload, "empty", "Nothing configured yet.")}</Text>; }
+
+/** Short-lived "it worked" state for buttons whose action has no host dialog. */
+function useFlash<T>() {
+  const [value, setValue] = useState<T | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const trigger = useCallback((next: T) => {
+    window.clearTimeout(timer.current);
+    setValue(() => next);
+    timer.current = window.setTimeout(() => setValue(null), FLASH_MS);
+  }, []);
+  return [value, trigger] as const;
+}
+
+/** Button content that morphs to a check + confirmation word while `done`. */
+function FeedbackContent({ done, icon, label, doneLabel }: { done: boolean; icon?: ReactNode; label: string; doneLabel: string }) {
+  const reduce = useReducedMotion();
+  return <AnimatePresence initial={false} mode="wait">
+    <motion.span
+      key={done ? "done" : "idle"}
+      className={mergeClasses("bt-btn-content", done && "bt-btn-done")}
+      initial={{ opacity: 0, y: reduce ? 0 : 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: reduce ? 0 : -4 }}
+      transition={timing(reduce, 0.14)}
+      aria-live={done ? "polite" : undefined}
+    >
+      {done ? <><CheckIcon size={16} />{doneLabel}</> : <>{icon}{label}</>}
+    </motion.span>
+  </AnimatePresence>;
+}
+
+/**
+ * Two-step destructive button. First click arms it (red-tinted "Confirm?"),
+ * second click fires. Reverts after 3 s, on blur, or with Escape.
+ */
+function ConfirmButton({ payload, label, confirmLabel, icon, iconOnly, size, className, onConfirm }: { payload: SettingsPayload; label: string; confirmLabel?: string; icon: ReactNode; iconOnly?: boolean; size?: "small" | "medium"; className?: string; onConfirm: () => void }) {
+  const [armed, setArmed] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const reduce = useReducedMotion();
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const disarm = () => { window.clearTimeout(timer.current); setArmed(false); };
+  const confirmText = confirmLabel ?? t(payload, "confirmDelete", "Confirm?");
+  const text = armed ? confirmText : iconOnly ? null : label;
+  return <Button
+    appearance="subtle"
+    size={size}
+    className={mergeClasses("bt-danger", iconOnly && !armed && "bt-danger-icon", armed && "bt-danger-armed", className)}
+    aria-label={armed ? confirmText : label}
+    title={armed ? undefined : label}
+    onClick={event => {
+      event.stopPropagation();
+      if (!armed) {
+        setArmed(true);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setArmed(false), CONFIRM_MS);
+        return;
+      }
+      disarm();
+      onConfirm();
+    }}
+    onBlur={disarm}
+    onKeyDown={event => { if (event.key === "Escape" && armed) { event.stopPropagation(); disarm(); } }}
+  >
+    <span className="bt-btn-content bt-gapless">
+      {icon}
+      <AnimatePresence initial={false} mode="wait">
+        {text && <motion.span
+          key={armed ? "armed" : "idle"}
+          className="bt-swap"
+          initial={{ opacity: 0, width: 0 }}
+          animate={{ opacity: 1, width: "auto" }}
+          exit={{ opacity: 0, width: 0 }}
+          transition={timing(reduce, 0.14)}
+        ><span className="bt-swap-text">{text}</span></motion.span>}
+      </AnimatePresence>
+    </span>
+  </Button>;
+}
+
+/** Fires `onNew` when exactly one key appears after the first render (an add, not an import). */
+function useNewItem(keys: string[], onNew: (key: string) => void) {
+  const known = useRef<Set<string> | null>(null);
+  const signature = keys.join("\u0000");
+  useEffect(() => {
+    const previous = known.current;
+    known.current = new Set(keys);
+    if (!previous) return;
+    const added = keys.filter(key => !previous.has(key));
+    if (added.length === 1) onNew(added[0]);
+  }, [signature]);
+}
+
+// ── Hotkeys ───────────────────────────────────────────────────────────────────
+
+const post = (message: Record<string, unknown>) => window.chrome?.webview?.postMessage(message);
+
+/** One capture session per page: the recorded id, plus start/cancel helpers. */
+function useHotkeyCapture() {
+  const [recording, setRecording] = useState<string | null>(null);
+  const recordingRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+    const handleGlobalKeyDown = (event: globalThis.KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (["Control", "Shift", "Alt", "Meta"].includes(event.key)) return;
+      const clear = event.key === "Escape" || event.key === "Backspace" || event.key === "Delete";
+      post({
+        type: "setHotkey",
+        id: recording,
+        keyCode: clear ? 0 : event.keyCode,
+        ctrlKey: !clear && event.ctrlKey,
+        altKey: !clear && event.altKey,
+        shiftKey: !clear && event.shiftKey,
+        metaKey: !clear && event.metaKey,
+      });
+      recordingRef.current = null;
+      setRecording(null);
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown, true);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
+  }, [recording]);
+
+  // Resume host hotkeys if the page unmounts mid-capture.
+  useEffect(() => () => { if (recordingRef.current) post({ type: "hotkeyCaptureEnded" }); }, []);
+
+  // NOTE: capture state is intentionally NOT reset by bridge "state" messages:
+  // states arrive spontaneously (default-device changes) and would exit an
+  // in-progress capture. Capture ends on keydown (record/clear) or blur.
+  const start = useCallback((id: string) => {
+    if (recordingRef.current === id) return;
+    if (recordingRef.current) post({ type: "hotkeyCaptureEnded" });
+    recordingRef.current = id;
+    setRecording(id);
+    post({ type: "hotkeyCaptureStarted" });
+  }, []);
+
+  const cancel = useCallback((id: string) => {
+    if (recordingRef.current !== id) return;
+    recordingRef.current = null;
+    setRecording(null);
+    post({ type: "hotkeyCaptureEnded" });
+  }, []);
+
+  return { recording, start, cancel };
+}
+
+function Keycaps({ value }: { value: string }) {
+  // "Ctrl++" must keep the trailing plus as a key.
+  const parts = value.split(/\+(?!$)/).map(part => part.trim()).filter(Boolean);
+  return <span className="hotkey-chips">{parts.map((part, index) => <kbd key={index}>{part}</kbd>)}</span>;
+}
+
+/** A single Button for every state so focus survives the record → keycaps swap. */
+function HotkeyButton({ payload, id, value, recording, onStart, onCancel }: { payload: SettingsPayload; id: string; value: string; recording: string | null; onStart: (id: string) => void; onCancel: (id: string) => void }) {
+  const isRecording = recording === id;
+  const recordLabel = t(payload, "recordShortcut", "Record");
+  return <Button
+    appearance={isRecording ? "primary" : value ? "secondary" : "subtle"}
+    className={mergeClasses("bt-hotkey", isRecording && "bt-hotkey-recording", !isRecording && value && "hotkey-button-polished", !isRecording && !value && "bt-hotkey-empty")}
+    aria-label={isRecording ? undefined : value ? `${recordLabel}: ${value}` : recordLabel}
+    title={!isRecording && !value ? recordLabel : undefined}
+    onClick={event => { event.stopPropagation(); onStart(id); }}
+    onBlur={() => onCancel(id)}
+  >
+    {isRecording
+      ? <span className="bt-hotkey-recording-text">{t(payload, "pressShortcut", "Press keys · Esc clears")}</span>
+      : value ? <Keycaps value={value} /> : <span className="bt-btn-content" aria-hidden="true"><PlusIcon size={14} /></span>}
+  </Button>;
+}
+
+function ClearHotkeyButton({ payload, id }: { payload: SettingsPayload; id: string }) {
+  const label = t(payload, "clearShortcut", "Clear shortcut");
+  return <Button className="bt-hotkey-clear" appearance="subtle" size="small" icon={<XIcon size={15} />} aria-label={label} title={label} onClick={event => { event.stopPropagation(); post({ type: "setHotkey", id, keyCode: 0 }); }} />;
+}
+
+function HotkeyControl({ payload, id, value, capture }: { payload: SettingsPayload; id: string; value: string; capture: ReturnType<typeof useHotkeyCapture> }) {
+  return <span className="bt-hotkey-cell">
+    <HotkeyButton payload={payload} id={id} value={value} recording={capture.recording} onStart={capture.start} onCancel={capture.cancel} />
+    {value && capture.recording !== id && <ClearHotkeyButton payload={payload} id={id} />}
+  </span>;
+}
+
+// ── Pages ─────────────────────────────────────────────────────────────────────
 
 function GeneralPage({ payload, styles, action }: PageProps) {
+  const reduce = useReducedMotion();
+  const hiddenApps = payload.collections.hiddenApps;
+  const hiddenDevices = payload.collections.hiddenDevices;
   return <>
-    <Section icon={<MonitorIcon size={18} />} title={t(payload, "startupTitle", "Startup")} description={t(payload, "startupDescription", "Launch BetterTrumpet with Windows")} anchor="startup" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="runAtStartup" label={t(payload, "runAtStartup", "Run at Windows startup")} /></Section>
+    <Section icon={<MonitorIcon size={18} />} title={t(payload, "startupTitle", "Startup")} anchor="startup" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="runAtStartup" label={t(payload, "runAtStartup", "Run at Windows startup")} /></Section>
     <Section icon={<SettingsIcon size={18} />} title={t(payload, "trayTitle", "Notification icon")} description={t(payload, "trayDescription", "Tray icon appearance and behavior")} anchor="tray" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useLegacyIcon" label={t(payload, "useLegacyIcon", "Use original icon")} /><ToggleRow payload={payload} styles={styles} settingKey="showAppTooltips" label={t(payload, "showAppTooltips", "Show icon tooltips")} description={t(payload, "showAppTooltipsDescription", "Show details while hovering app icons.")} /></Section>
-    <Section icon={<MinusIcon size={18} />} anchor="hiddenApps" title={t(payload, "hiddenApps", "Hidden apps")} description={t(payload, "hiddenAppsDescription", "Restore apps hidden from the mixer.")} styles={styles}>{payload.collections.hiddenApps.length ? <><div className={styles.list}>{payload.collections.hiddenApps.map(item => <ListRow key={`${item.deviceId}-${item.appId}-${item.exeName}`} styles={styles} title={item.displayName} meta={item.deviceName} actions={<Button appearance="subtle" onClick={() => action("restoreHiddenApp", { ...item })}>{t(payload, "restore", "Restore")}</Button>} />)}</div><div className={styles.actionRow}><Button appearance="secondary" onClick={() => action("restoreAllHiddenApps")}>{t(payload, "restoreAll", "Restore all")}</Button></div></> : <Empty payload={payload} styles={styles} />}</Section>
-    {payload.collections.hiddenDevices.length > 0 && <Section icon={<Volume2Icon size={18} />} title={t(payload, "hiddenDevices", "Hidden devices")} anchor="hiddenDevices" styles={styles}><div className={styles.list}>{payload.collections.hiddenDevices.map(item => <ListRow key={item.deviceId} styles={styles} title={item.displayName || item.deviceId} actions={<Button appearance="subtle" onClick={() => action("restoreHiddenDevice", { deviceId: item.deviceId })}>{t(payload, "restore", "Restore")}</Button>} />)}</div><div className={styles.actionRow}><Button appearance="secondary" onClick={() => action("restoreAllHiddenDevices")}>{t(payload, "restoreAll", "Restore all")}</Button></div></Section>}
+    <Section icon={<MinusIcon size={18} />} anchor="hiddenApps" title={t(payload, "hiddenApps", "Hidden apps")} description={t(payload, "hiddenAppsDescription", "Restore apps hidden from the mixer.")} styles={styles}>
+      <div className={styles.list}>
+        <AnimatePresence initial={false}>
+          {hiddenApps.map(item => <motion.div key={`${item.deviceId}-${item.appId}-${item.exeName}`} {...itemMotion(reduce)}>
+            <ListRow styles={styles} title={item.displayName} meta={item.deviceName} actions={<Button appearance="subtle" onClick={() => action("restoreHiddenApp", { ...item })}>{t(payload, "restore", "Restore")}</Button>} />
+          </motion.div>)}
+        </AnimatePresence>
+      </div>
+      <Reveal open={hiddenApps.length > 0}><div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-end")}><Button appearance="secondary" onClick={() => action("restoreAllHiddenApps")}>{t(payload, "restoreAll", "Restore all")}</Button></div></Reveal>
+      <Reveal open={hiddenApps.length === 0}><Empty payload={payload} styles={styles} /></Reveal>
+    </Section>
+    <AnimatePresence initial={false}>
+      {hiddenDevices.length > 0 && <motion.div key="hiddenDevices" initial={{ opacity: 0, height: 0, overflow: "hidden" }} animate={{ opacity: 1, height: "auto", transitionEnd: { overflow: "visible" } }} exit={{ opacity: 0, height: 0, overflow: "hidden" }} transition={timing(reduce)}>
+        <Section icon={<Volume2Icon size={18} />} title={t(payload, "hiddenDevices", "Hidden devices")} anchor="hiddenDevices" styles={styles}>
+          <div className={styles.list}>
+            <AnimatePresence initial={false}>
+              {hiddenDevices.map(item => <motion.div key={item.deviceId} {...itemMotion(reduce)}>
+                <ListRow styles={styles} title={item.displayName || item.deviceId} actions={<Button appearance="subtle" onClick={() => action("restoreHiddenDevice", { deviceId: item.deviceId })}>{t(payload, "restore", "Restore")}</Button>} />
+              </motion.div>)}
+            </AnimatePresence>
+          </div>
+          <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-end")}><Button appearance="secondary" onClick={() => action("restoreAllHiddenDevices")}>{t(payload, "restoreAllDevices", "Restore all devices")}</Button></div>
+        </Section>
+      </motion.div>}
+    </AnimatePresence>
   </>;
 }
 
 function MousePage({ payload, styles, setSetting }: PageProps) {
   const focusLostEnabled = Boolean(payload.values.useFocusLostVolume);
-  return <><Section icon={<MouseIcon size={18} />} title={t(payload, "scrollWheelTitle", "Mouse wheel")} description={t(payload, "scrollWheelDescription", "Control volume with the wheel")} anchor="wheel" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useScrollWheelInTray" label={t(payload, "useScrollWheelInTray", "Change volume over the tray icon")} description={t(payload, "useScrollWheelInTrayDescription", "Scroll over the notification icon.")} /><ToggleRow payload={payload} styles={styles} settingKey="useGlobalMouseWheelHook" label={t(payload, "useGlobalMouseWheelHook", "Change volume while the interface is open")} description={t(payload, "useGlobalMouseWheelHookDescription", "The wheel controls volume from the interface.")} /></Section><Section icon={<Volume2Icon size={18} />} title={t(payload, "volumeScaleTitle", "Volume scale")} description={t(payload, "volumeScaleDescription", "Volume step distribution")} anchor="scale" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useLogarithmicVolume" label={t(payload, "useLogarithmicVolume", "Use logarithmic scale")} /><ToggleRow payload={payload} styles={styles} settingKey="useVolumeTickSound" label={t(payload, "useVolumeTickSound", "Play a sound while adjusting")} description={t(payload, "useVolumeTickSoundDescription", "Play a light tick while changing volume.")} /></Section><Section icon={<ArrowLeftRightIcon size={18} />} title={t(payload, "deviceChangeTitle", "Device change")} description={t(payload, "deviceChangeDescription", "Toast when the default playback device switches")} anchor="deviceChange" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="notifyOnDeviceChange" label={t(payload, "notifyOnDeviceChange", "Show a notification when the default device changes")} /></Section><Section icon={<EyeOffIcon size={18} />} title={t(payload, "focusLostTitle", "Focus lost")} description={t(payload, "focusLostDescription", "Mute or reduce apps when another window is in front")} anchor="focusLost" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useFocusLostVolume" label={t(payload, "useFocusLostVolume", "Lower volume of apps that lose focus")} setSetting={setSetting} />{focusLostEnabled && <><RangeRow styles={styles} label={t(payload, "focusLostAttenuate", "Background volume (0% mutes)")} description={t(payload, "focusLostAttenuateHint", "Locked and keep-muted rules are left alone.")} value={Number(payload.values.focusLostAttenuatePercent)} min={0} max={100} suffix="%" onCommit={value => setSetting("focusLostAttenuatePercent", value)} /><RangeRow styles={styles} label={t(payload, "focusLostFade", "Fade duration")} description={t(payload, "focusLostFadeHint", "0 ms is immediate.")} value={Number(payload.values.focusLostFadeDurationMs)} min={0} max={5000} step={100} suffix=" ms" onCommit={value => setSetting("focusLostFadeDurationMs", value)} /><SelectRow styles={styles} label={t(payload, "focusLostScope", "Applications affected")} description={t(payload, "focusLostSelectedHint", "Use the Focus lost checkbox on an app rule to select an application.")} value={Number(payload.values.focusLostSelectedAppsOnly)} options={[{ value: 0, label: t(payload, "focusLostAllApps", "All applications") }, { value: 1, label: t(payload, "focusLostSelectedApps", "Only applications selected in App rules") }]} onChange={value => setSetting("focusLostSelectedAppsOnly", value === 1)} /></>}</Section></>;
+  return <>
+    <Section icon={<MouseIcon size={18} />} title={t(payload, "scrollWheelTitle", "Mouse wheel")} description={t(payload, "scrollWheelDescription", "Control volume with the wheel")} anchor="wheel" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useScrollWheelInTray" label={t(payload, "useScrollWheelInTray", "Change volume over the tray icon")} description={t(payload, "useScrollWheelInTrayDescription", "Scroll over the notification icon.")} /><ToggleRow payload={payload} styles={styles} settingKey="useGlobalMouseWheelHook" label={t(payload, "useGlobalMouseWheelHook", "Change volume while the interface is open")} description={t(payload, "useGlobalMouseWheelHookDescription", "The wheel controls volume from the interface.")} /></Section>
+    <Section icon={<Volume2Icon size={18} />} title={t(payload, "volumeScaleTitle", "Volume scale")} description={t(payload, "volumeScaleDescription", "Volume step distribution")} anchor="scale" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useLogarithmicVolume" label={t(payload, "useLogarithmicVolume", "Use logarithmic scale")} /><ToggleRow payload={payload} styles={styles} settingKey="useVolumeTickSound" label={t(payload, "useVolumeTickSound", "Play a sound while adjusting")} description={t(payload, "useVolumeTickSoundDescription", "Play a light tick while changing volume.")} /></Section>
+    <Section icon={<ArrowLeftRightIcon size={18} />} title={t(payload, "deviceChangeTitle", "Device change")} description={t(payload, "deviceChangeDescription", "Toast when the default playback device switches")} anchor="deviceChange" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="notifyOnDeviceChange" label={t(payload, "notifyOnDeviceChange", "Show a notification when the default device changes")} /></Section>
+    <Section icon={<EyeOffIcon size={18} />} title={t(payload, "focusLostTitle", "Focus lost")} description={t(payload, "focusLostDescription", "Mute or reduce apps when another window is in front")} anchor="focusLost" styles={styles}>
+      <ToggleRow payload={payload} styles={styles} settingKey="useFocusLostVolume" label={t(payload, "useFocusLostVolume", "Lower volume of apps that lose focus")} setSetting={setSetting} />
+      <Reveal open={focusLostEnabled} className="bt-reveal-rows">
+        <RangeRow payload={payload} styles={styles} label={t(payload, "focusLostAttenuate", "Background volume (0% mutes)")} description={t(payload, "focusLostAttenuateHint", "Locked and keep-muted rules are left alone.")} value={Number(payload.values.focusLostAttenuatePercent)} min={0} max={100} suffix="%" onCommit={value => setSetting("focusLostAttenuatePercent", value)} />
+        <RangeRow payload={payload} styles={styles} label={t(payload, "focusLostFade", "Fade duration")} description={t(payload, "focusLostFadeHint", "0 ms is immediate.")} value={Number(payload.values.focusLostFadeDurationMs)} min={0} max={5000} step={100} suffix=" ms" onCommit={value => setSetting("focusLostFadeDurationMs", value)} />
+        <SelectRow styles={styles} label={t(payload, "focusLostScope", "Applications affected")} description={t(payload, "focusLostSelectedHint", "Use the Focus lost checkbox on an app rule to select an application.")} value={Number(payload.values.focusLostSelectedAppsOnly)} options={[{ value: 0, label: t(payload, "focusLostAllApps", "All applications") }, { value: 1, label: t(payload, "focusLostSelectedApps", "Only applications selected in App rules") }]} onChange={value => setSetting("focusLostSelectedAppsOnly", value === 1)} />
+      </Reveal>
+    </Section>
+  </>;
 }
 
 function ShortcutsPage({ payload, styles, setSetting }: PageProps) {
-  const [recording, setRecording] = useState<string | null>(null);
-  const recordingRef = useRef<string | null>(null);
-
-  // Sync ref with state so cleanup can access current value
-  useEffect(() => {
-    recordingRef.current = recording;
-  }, [recording]);
-
-  // Global keydown listener when recording
-  useEffect(() => {
-    if (!recording) return;
-
-    const handleGlobalKeyDown = (event: globalThis.KeyboardEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const modifierOnly = ["Control", "Shift", "Alt", "Meta"].includes(event.key);
-      if (modifierOnly) return;
-
-      const clear = event.key === "Escape" || event.key === "Backspace" || event.key === "Delete";
-      window.chrome?.webview?.postMessage({
-        type: "setHotkey",
-        id: recording,
-        keyCode: clear ? 0 : event.keyCode,
-        ctrlKey: clear ? false : event.ctrlKey,
-        altKey: clear ? false : event.altKey,
-        shiftKey: clear ? false : event.shiftKey,
-        metaKey: clear ? false : event.metaKey
-      });
-      setRecording(null);
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown, true); // useCapture=true
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, [recording]);
-
-  // Cleanup: ensure hotkeys resume if component unmounts during capture
-  useEffect(() => {
-    return () => {
-      if (recordingRef.current) {
-        window.chrome?.webview?.postMessage({ type: "hotkeyCaptureEnded" });
-      }
-    };
-  }, []);
-
-  // NOTE: capture state is intentionally NOT reset by bridge "state" messages:
-  // states now arrive spontaneously (default-device changes) and would exit
-  // an in-progress capture. Capture ends on keydown (record/clear) or blur.
-  const start = (id: string) => {
-    // If already recording another hotkey, end that capture first
-    if (recordingRef.current && recordingRef.current !== id) {
-      window.chrome?.webview?.postMessage({ type: "hotkeyCaptureEnded" });
-    }
-    setRecording(id);
-    window.chrome?.webview?.postMessage({ type: "hotkeyCaptureStarted" });
-  };
-
-  const cancel = (id: string) => {
-    if (recordingRef.current === id) {
-      setRecording(null);
-      window.chrome?.webview?.postMessage({ type: "hotkeyCaptureEnded" });
-    }
-  };
-
-  const HotkeyButton = ({ id, value }: { id: string; value: string }) => (
-    <Button className={value && recording !== id ? "hotkey-button-polished" : undefined} appearance={recording === id ? "primary" : "secondary"} onClick={() => start(id)} onBlur={() => cancel(id)}>
-      {recording === id ? t(payload, "pressShortcut", "Press keys · Esc clears") : value ? <span className="hotkey-chips">{value.split("+").map((part, index) => <kbd key={index}>{part.trim()}</kbd>)}</span> : t(payload, "recordShortcut", "Record")}
-    </Button>
-  );
-  const ClearButton = ({ id }: { id: string }) => (
-    <Button appearance="subtle" icon={<Trash2Icon size={17} />} aria-label={t(payload, "clearShortcut", "Clear shortcut")} onClick={() => window.chrome?.webview?.postMessage({ type: "setHotkey", id, keyCode: 0 })} />
-  );
+  const capture = useHotkeyCapture();
   return <>
-    <Section icon={<KeyboardIcon size={18} />} title={t(payload, "shortcuts", "Keyboard shortcuts")} anchor="shortcuts" styles={styles}>
+    <Section icon={<KeyboardIcon size={18} />} title={t(payload, "shortcutsGlobal", "Global shortcuts")} anchor="shortcuts" styles={styles}>
       <div className={styles.list}>
-        {payload.collections.hotkeys.map(hotkey => <ListRow key={hotkey.id} styles={styles} title={hotkey.label} meta={hotkey.description} actions={<>
-          <HotkeyButton id={hotkey.id} value={hotkey.value} />
-          {hotkey.value && <ClearButton id={hotkey.id} />}
-        </>} />)}
+        {payload.collections.hotkeys.map(hotkey => <ListRow key={hotkey.id} styles={styles} title={hotkey.label} meta={hotkey.description && !sameText(hotkey.description, hotkey.label) ? hotkey.description : undefined} actions={<HotkeyControl payload={payload} id={hotkey.id} value={hotkey.value} capture={capture} />} />)}
       </div>
     </Section>
     {payload.collections.deviceHotkeys.length > 0 && <Section icon={<Volume2Icon size={18} />} title={t(payload, "deviceShortcuts", "Device shortcuts")} description={t(payload, "deviceShortcutsDesc", "Switch the default playback device with one shortcut.")} anchor="deviceShortcuts" styles={styles}>
       <div className={styles.list}>
-        {payload.collections.deviceHotkeys.map(hotkey => <ListRow key={hotkey.id} styles={styles} title={hotkey.label} badge={hotkey.isDefault ? <span className="badge-default-polished">{t(payload, "defaultDeviceBadge", "Default")}</span> : undefined} actions={<>
-          <HotkeyButton id={hotkey.id} value={hotkey.value} />
-          {hotkey.value && <ClearButton id={hotkey.id} />}
-        </>} />)}
+        {payload.collections.deviceHotkeys.map(hotkey => <ListRow key={hotkey.id} styles={styles} title={hotkey.label} badge={hotkey.isDefault ? <span className="badge-default-polished">{t(payload, "defaultDeviceBadge", "Default")}</span> : undefined} actions={<HotkeyControl payload={payload} id={hotkey.id} value={hotkey.value} capture={capture} />} />)}
       </div>
-      <ToggleRow payload={payload} styles={styles} settingKey="showDeviceSwitchNotification" label={t(payload, "showDeviceSwitchNotification", "Show notification when switching devices")} description={t(payload, "showDeviceSwitchNotificationDescription", "Display a toast notification when switching the default device via hotkey.")} setSetting={setSetting} />
+      <ToggleRow className="bt-row-separated" payload={payload} styles={styles} settingKey="showDeviceSwitchNotification" label={t(payload, "showDeviceSwitchNotification", "Show notification when switching devices")} description={t(payload, "showDeviceSwitchNotificationDescription", "Display a toast notification when switching the default device via hotkey.")} setSetting={setSetting} />
     </Section>}
   </>;
-}
-
-function ProfileHotkey({ payload, styles, profileIndex, value, rowClassName }: { payload: SettingsPayload; styles: Styles; profileIndex: number; value: string; rowClassName?: string }) {
-  const [recording, setRecording] = useState(false);
-  const recordingRef = useRef(false);
-  const id = `profile:${profileIndex}`;
-
-  // Sync ref with state
-  useEffect(() => {
-    recordingRef.current = recording;
-  }, [recording]);
-
-  // Global keydown listener when recording
-  useEffect(() => {
-    if (!recording) return;
-
-    const handleGlobalKeyDown = (event: globalThis.KeyboardEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const modifierOnly = ["Control", "Shift", "Alt", "Meta"].includes(event.key);
-      if (modifierOnly) return;
-
-      const clear = event.key === "Escape" || event.key === "Backspace" || event.key === "Delete";
-      window.chrome?.webview?.postMessage({
-        type: "setHotkey",
-        id,
-        keyCode: clear ? 0 : event.keyCode,
-        ctrlKey: !clear && event.ctrlKey,
-        altKey: !clear && event.altKey,
-        shiftKey: !clear && event.shiftKey,
-        metaKey: !clear && event.metaKey
-      });
-      setRecording(false);
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown, true);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, [recording, id]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (recordingRef.current) {
-        window.chrome?.webview?.postMessage({ type: "hotkeyCaptureEnded" });
-      }
-    };
-  }, []);
-
-  const start = () => {
-    setRecording(true);
-    window.chrome?.webview?.postMessage({ type: "hotkeyCaptureStarted" });
-  };
-
-  const handleBlur = () => {
-    if (recordingRef.current) {
-      setRecording(false);
-      window.chrome?.webview?.postMessage({ type: "hotkeyCaptureEnded" });
-    }
-  };
-
-  return <div className={rowClassName ?? styles.actionRow} onClick={event => event.stopPropagation()}><Button appearance={recording ? "primary" : "secondary"} onClick={start} onBlur={handleBlur}>{recording ? t(payload, "pressShortcut", "Press keys · Esc clears") : value || t(payload, "recordShortcut", "Record")}</Button>{value && !recording && <Button appearance="subtle" icon={<Trash2Icon size={17} />} aria-label={t(payload, "clearShortcut", "Clear shortcut")} onClick={() => window.chrome?.webview?.postMessage({ type: "setHotkey", id, keyCode: 0 })} />}</div>;
 }
 
 function ProfilesPage({ payload, styles, action }: PageProps) {
   const [name, setName] = useState("");
   const [allDevices, setAllDevices] = useState(false);
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [savedFlash, flashSaved] = useFlash<boolean>();
+  const [appliedFlash, flashApplied] = useFlash<string>();
+  const [renamedFlash, flashRenamed] = useFlash<string>();
+  const capture = useHotkeyCapture();
+  const reduce = useReducedMotion();
+  const profiles = payload.collections.profiles;
+  const keyOf = (profile: { slug: string; name: string }) => profile.slug || profile.name;
 
-  const save = () => { action("profileCapture", { name, allDevices }); setName(""); };
-  const toggle = (index: number) => {
-    setExpandedIndex(current => current === index ? null : index);
-    const profile = payload.collections.profiles.find(item => item.index === index);
-    setRenameValue(profile?.name ?? "");
+  // The host generates a default name, so Save stays enabled with an empty field.
+  const save = () => { action("profileCapture", { name, allDevices }); setName(""); flashSaved(true); };
+  const toggle = (key: string, currentName: string) => {
+    setExpanded(current => current === key ? null : key);
+    setRenameValue(currentName);
   };
 
-  const saveBar = <div className={styles.actionRow}>
-    <Input className={styles.controlGrow} value={name} onChange={(_, data) => setName(data.value)} placeholder={t(payload, "profileName", "Preset name")} />
-    <Switch checked={allDevices} label={t(payload, "allDevices", "All devices")} onChange={(_, data) => setAllDevices(data.checked)} />
-    <Button appearance="subtle" icon={<UploadIcon size={17} />} aria-label={t(payload, "import", "Import")} title={t(payload, "import", "Import")} onClick={() => action("profileImport")} />
-    <Button appearance="primary" icon={<SaveIcon size={17} />} onClick={save}>{t(payload, "save", "Save")}</Button>
-  </div>;
-
   return <Section icon={<SlidersHorizontalIcon size={18} />} title={t(payload, "savedProfiles", "Presets")} description={t(payload, "profileCaptureDescription", "Save the current device and app volumes, then re-apply them in one click or shortcut.")} anchor="presets" styles={styles}>
-    {payload.collections.profiles.length > 0 && saveBar}
-    {payload.collections.profiles.length ? <div className={styles.accList}>{payload.collections.profiles.map(profile => {
-      const isOpen = expandedIndex === profile.index;
-      const isSelected = profile.index === payload.collections.selectedProfileIndex;
-      return <div className={styles.accItem} key={profile.index}>
-        <div
-          className={mergeClasses(styles.accHeader, "acc-header-polished")}
-          role="button"
-          tabIndex={0}
-          aria-expanded={isOpen}
-          onClick={() => toggle(profile.index)}
-          onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(profile.index); } }}
-        >
-          <div className={styles.accCopy}>
-            <div className="list-row-title">
-              <Text weight="semibold">{profile.name}</Text>
-              {isSelected && <span className="badge-default-polished">{t(payload, "profileSelected", "Applied")}</span>}
-              {profile.applyAppsOnly && <span className="chip-polished">{t(payload, "appsOnly", "Apps only")}</span>}
+    <Reveal open={profiles.length === 0}>
+      <div className="bt-empty-block">
+        <span className="bt-empty-icon" aria-hidden="true"><BookmarkPlusIcon size={18} /></span>
+        <Text className="bt-empty-text" size={200}>{t(payload, "emptyProfilesHint", "Capture your current mix as your first preset.")}</Text>
+      </div>
+    </Reveal>
+    <div className={mergeClasses(styles.actionRow, "bt-save-bar")}>
+      <Input className={styles.controlGrow} value={name} onChange={(_, data) => setName(data.value)} onKeyDown={event => { if (event.key === "Enter") save(); }} placeholder={t(payload, "presetName", "Preset name")} aria-label={t(payload, "presetName", "Preset name")} />
+      <Button appearance="primary" onClick={save}><FeedbackContent done={Boolean(savedFlash)} icon={<SaveIcon size={17} />} label={t(payload, "save", "Save")} doneLabel={t(payload, "saved", "Saved")} /></Button>
+    </div>
+    <div className={mergeClasses(styles.actionRow, "bt-save-options")}>
+      <Switch checked={allDevices} label={t(payload, "allDevices", "All devices")} onChange={(_, data) => setAllDevices(data.checked)} />
+      <Button appearance="subtle" icon={<UploadIcon size={17} />} onClick={() => action("profileImport")}>{t(payload, "import", "Import")}</Button>
+    </div>
+    <div className={mergeClasses(styles.accList, profiles.length > 0 && "bt-acc-list-separated")}>
+      <AnimatePresence initial={false}>
+        {profiles.map(profile => {
+          const key = keyOf(profile);
+          const isOpen = expanded === key;
+          const isSelected = profile.index === payload.collections.selectedProfileIndex;
+          const trimmed = renameValue.trim();
+          const renamed = renamedFlash === key;
+          return <motion.div className={styles.accItem} key={key} {...itemMotion(reduce)}>
+            <div
+              className={mergeClasses(styles.accHeader, "acc-header-polished")}
+              role="button"
+              tabIndex={0}
+              aria-expanded={isOpen}
+              onClick={() => toggle(key, profile.name)}
+              onKeyDown={event => headerKeys(event, () => toggle(key, profile.name))}
+            >
+              <div className={styles.accCopy}>
+                <div className="list-row-title">
+                  <Text weight="semibold">{profile.name}</Text>
+                  {isSelected && <span className="badge-default-polished">{t(payload, "profileSelected", "Applied")}</span>}
+                  {profile.applyAppsOnly && <span className="chip-polished">{t(payload, "appsOnly", "Apps only")}</span>}
+                </div>
+                <Text className={`${styles.listMeta} truncate-text`} size={200}>{profile.details}</Text>
+              </div>
+              <span className={styles.accInlineControls} onClick={stop}>
+                <HotkeyControl payload={payload} id={`profile:${profile.index}`} value={profile.hotkey} capture={capture} />
+                <Button appearance={isSelected ? "primary" : "secondary"} onClick={() => { action("profileApply", { index: profile.index }); flashApplied(key); }}>
+                  <FeedbackContent done={appliedFlash === key} label={t(payload, "apply", "Apply")} doneLabel={t(payload, "applied", "Applied")} />
+                </Button>
+              </span>
+              <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
             </div>
-            <Text className={`${styles.listMeta} truncate-text`} size={200}>{profile.details}</Text>
-          </div>
-          <ProfileHotkey payload={payload} styles={styles} profileIndex={profile.index} value={profile.hotkey} rowClassName={styles.accInlineControls} />
-          <Button appearance={isSelected ? "primary" : "secondary"} onClick={event => { event.stopPropagation(); action("profileApply", { index: profile.index }); }}>{t(payload, "apply", "Apply")}</Button>
-          <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
-        </div>
-        {isOpen && <div className={styles.accDetail}>
-          <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`profile-apps-only-${profile.index}`}>
-            <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "appsOnly", "Apply apps only")}</Text><Text className={styles.settingDescription} size={200}>{t(payload, "appsOnlyDescription", "Only matching app volumes change; devices keep their volume.")}</Text></div>
-            <Switch id={`profile-apps-only-${profile.index}`} checked={profile.applyAppsOnly} aria-label={t(payload, "appsOnly", "Apply apps only")} onChange={(_, data) => action("profileAppsOnly", { index: profile.index, value: data.checked })} />
-          </label>
-          <div className={styles.settingRow}>
-            <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "rename", "Rename")}</Text></div>
-            <div className={styles.rowActions}>
-              <Input value={renameValue} onChange={(_, data) => setRenameValue(data.value)} placeholder={t(payload, "profileName", "Preset name")} />
-              <Button appearance="secondary" disabled={!renameValue.trim() || renameValue.trim() === profile.name} onClick={() => action("profileRename", { index: profile.index, name: renameValue.trim() })}>{t(payload, "rename", "Rename")}</Button>
-            </div>
-          </div>
-          <div className={styles.actionRow}>
-            <Button appearance="secondary" icon={<DownloadIcon size={17} />} onClick={() => action("profileExport", { index: profile.index })}>{t(payload, "export", "Export")}</Button>
-            <Button appearance="subtle" icon={<Trash2Icon size={17} />} onClick={() => { action("profileDelete", { index: profile.index }); setExpandedIndex(null); }}>{t(payload, "delete", "Delete")}</Button>
-          </div>
-        </div>}
-      </div>;
-    })}</div> : <Text className={styles.empty}>{t(payload, "emptyProfilesHint", "Capture your current mix as your first preset.")}</Text>}
-    {!payload.collections.profiles.length && saveBar}
-    <ToggleRow payload={payload} styles={styles} settingKey="showQuickTrumpetConfirmation" label={t(payload, "confirmation", "Show confirmation after applying")} />
+            <Reveal open={isOpen}>
+              <div className={styles.accDetail}>
+                <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`profile-apps-only-${profile.index}`}>
+                  <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "appsOnly", "Apply apps only")}</Text><Text className={styles.settingDescription} size={200}>{t(payload, "appsOnlyDescription", "Only matching app volumes change; devices keep their volume.")}</Text></div>
+                  <Switch id={`profile-apps-only-${profile.index}`} checked={profile.applyAppsOnly} aria-label={t(payload, "appsOnly", "Apply apps only")} onChange={(_, data) => action("profileAppsOnly", { index: profile.index, value: data.checked })} />
+                </label>
+                <div className={styles.settingRow}>
+                  <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "rename", "Rename")}</Text></div>
+                  <div className={styles.rowActions}>
+                    <Input value={renameValue} onChange={(_, data) => setRenameValue(data.value)} placeholder={t(payload, "presetName", "Preset name")} aria-label={t(payload, "presetName", "Preset name")} />
+                    <Button appearance="secondary" disabled={!renamed && (!trimmed || trimmed === profile.name)} onClick={() => { action("profileRename", { index: profile.index, name: trimmed }); flashRenamed(key); }}>
+                      <FeedbackContent done={renamed} label={t(payload, "rename", "Rename")} doneLabel={t(payload, "saved", "Saved")} />
+                    </Button>
+                  </div>
+                </div>
+                <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-between")}>
+                  <Button appearance="secondary" icon={<DownloadIcon size={17} />} onClick={() => action("profileExport", { index: profile.index })}>{t(payload, "export", "Export")}</Button>
+                  <ConfirmButton payload={payload} label={t(payload, "delete", "Delete")} icon={<Trash2Icon size={16} />} onConfirm={() => { action("profileDelete", { index: profile.index, confirmed: true }); setExpanded(null); }} />
+                </div>
+              </div>
+            </Reveal>
+          </motion.div>;
+        })}
+      </AnimatePresence>
+    </div>
+    <ToggleRow className="bt-row-separated" payload={payload} styles={styles} settingKey="showQuickTrumpetConfirmation" label={t(payload, "confirmation", "Show confirmation after applying")} />
   </Section>;
 }
 
@@ -349,8 +513,15 @@ function RulesPage({ payload, styles, action }: PageProps) {
   const [exeName, setExeName] = useState("");
   const [openRule, setOpenRule] = useState<string | null>(null);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
+  const reduce = useReducedMotion();
+  const rules = payload.collections.appRules;
+  const folders = payload.collections.folderRules;
 
-  const toggleRule = (rule: AppRule) => setOpenRule(current => current === rule.exeName ? null : rule.exeName);
+  // A freshly added rule/folder opens so its settings are one glance away.
+  useNewItem(rules.map(rule => rule.exeName), setOpenRule);
+  useNewItem(folders.map(rule => rule.id), setOpenFolder);
+
+  const add = () => { if (!exeName.trim()) return; action("appRuleAdd", { exeName }); setExeName(""); };
   const summarize = (rule: AppRule) => {
     const parts: string[] = [];
     if (rule.hardMuted) parts.push(t(payload, "hardMute", "Keep muted"));
@@ -359,80 +530,264 @@ function RulesPage({ payload, styles, action }: PageProps) {
     if (rule.volumeMode === 2) parts.push(`${rule.volumePercent}% · ${t(payload, "modeLock", "Lock")}`);
     return parts;
   };
-  const headerKeys = (event: KeyboardEvent<HTMLElement>, onToggle: () => void) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onToggle(); } };
+  const toggleRule = (key: string) => setOpenRule(current => current === key ? null : key);
+  const toggleFolder = (key: string) => setOpenFolder(current => current === key ? null : key);
 
-  return <><Section icon={<ListChecksIcon size={18} />} title={t(payload, "appRules", "Application rules")} description={t(payload, "appRulesDescription", "Persistent mute and volume behavior per app.")} anchor="rules" styles={styles}>
-    <div className={styles.actionRow}><Input className={styles.controlGrow} value={exeName} onChange={(_, data) => setExeName(data.value)} placeholder={t(payload, "appPlaceholder", "Application executable")} /><Button appearance="secondary" onClick={() => action("appRuleBrowse")}>{t(payload, "browse", "Browse")}</Button><Button appearance="primary" icon={<PlusIcon size={17} />} disabled={!exeName.trim()} onClick={() => { action("appRuleAdd", { exeName }); setExeName(""); }}>{t(payload, "addApp", "Add")}</Button></div>
-    {payload.collections.appRules.length ? <div className={styles.accList}>{payload.collections.appRules.map(rule => {
-      const isOpen = openRule === rule.exeName;
-      return <div className={styles.accItem} key={rule.exeName}>
-        <div className={mergeClasses(styles.accHeader, "acc-header-polished")} role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => toggleRule(rule)} onKeyDown={event => headerKeys(event, () => toggleRule(rule))}>
-          <div className={styles.accCopy}>
-            <div className="list-row-title"><Text weight="semibold">{rule.displayName || rule.exeName}</Text></div>
-            <Text className={`${styles.listMeta} truncate-text`} size={200}>{rule.exeName}.exe</Text>
-          </div>
-          <div className={styles.ruleBadges}>{summarize(rule).map((badge, index) => <span className="chip-polished" key={index}>{badge}</span>)}</div>
-          <span className={styles.accInlineControls} onClick={event => event.stopPropagation()}>
-            <Button appearance="subtle" icon={<Trash2Icon size={17} />} aria-label={t(payload, "delete", "Delete")} onClick={() => action("appRuleRemove", { exeName: rule.exeName })} />
+  return <>
+    <Section icon={<ListChecksIcon size={18} />} title={t(payload, "appRules", "Application rules")} description={t(payload, "appRulesDescription", "Persistent mute and volume behavior per app.")} anchor="rules" styles={styles}>
+      <div className={mergeClasses(styles.actionRow, "bt-add-row")}>
+        <Input className={styles.controlGrow} value={exeName} onChange={(_, data) => setExeName(data.value)} onKeyDown={event => { if (event.key === "Enter") add(); }} placeholder={t(payload, "appPlaceholder", "Application executable")} aria-label={t(payload, "appPlaceholder", "Application executable")} />
+        <Button appearance="secondary" onClick={() => action("appRuleBrowse")}>{t(payload, "browse", "Browse")}</Button>
+        <Button appearance="primary" icon={<PlusIcon size={17} />} disabled={!exeName.trim()} onClick={add}>{t(payload, "addApp", "Add")}</Button>
+      </div>
+      <div className={mergeClasses(styles.accList, rules.length > 0 && "bt-acc-list-separated")}>
+        <AnimatePresence initial={false}>
+          {rules.map(rule => {
+            const isOpen = openRule === rule.exeName;
+            const badges = summarize(rule);
+            return <motion.div className={styles.accItem} key={rule.exeName} {...itemMotion(reduce)}>
+              <div className={mergeClasses(styles.accHeader, "acc-header-polished")} role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => toggleRule(rule.exeName)} onKeyDown={event => headerKeys(event, () => toggleRule(rule.exeName))}>
+                <div className={styles.accCopy}>
+                  <div className="list-row-title"><Text weight="semibold">{rule.displayName || rule.exeName}</Text></div>
+                  <Text className={`${styles.listMeta} truncate-text`} size={200}>{rule.exeName}.exe</Text>
+                </div>
+                {badges.length > 0 && <div className={styles.ruleBadges}>{badges.map((badge, index) => <span className="chip-polished" key={index}>{badge}</span>)}</div>}
+                <span className={mergeClasses(styles.accInlineControls, "bt-acc-danger-slot")} onClick={stop}>
+                  <ConfirmButton payload={payload} iconOnly label={t(payload, "delete", "Delete")} icon={<Trash2Icon size={16} />} onConfirm={() => action("appRuleRemove", { exeName: rule.exeName, confirmed: true })} />
+                </span>
+                <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
+              </div>
+              <Reveal open={isOpen}>
+                <div className={styles.accDetail}>
+                  <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`rule-mute-${rule.exeName}`}>
+                    <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "hardMute", "Keep muted")}</Text></div>
+                    <Switch id={`rule-mute-${rule.exeName}`} checked={rule.hardMuted} aria-label={t(payload, "hardMute", "Keep muted")} onChange={(_, data) => action("appRuleUpdate", { exeName: rule.exeName, hardMuted: data.checked })} />
+                  </label>
+                  <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`rule-focus-${rule.exeName}`}>
+                    <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "focusLostRule", "Focus lost")}</Text></div>
+                    <Switch id={`rule-focus-${rule.exeName}`} checked={rule.focusLost} aria-label={t(payload, "focusLostRule", "Focus lost")} onChange={(_, data) => action("appRuleUpdate", { exeName: rule.exeName, focusLost: data.checked })} />
+                  </label>
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "volumeBehavior", "Volume behavior")}</Text></div>
+                    <select className={mergeClasses(styles.select, "select-polished")} value={rule.volumeMode} aria-label={t(payload, "volumeBehavior", "Volume behavior")} onChange={event => action("appRuleUpdate", { exeName: rule.exeName, volumeMode: Number(event.currentTarget.value) })}>
+                      <option value={0}>{t(payload, "modeNone", "None")}</option>
+                      <option value={1}>{t(payload, "modeLaunch", "Set at launch")}</option>
+                      <option value={2}>{t(payload, "modeLock", "Lock")}</option>
+                    </select>
+                  </div>
+                  <Reveal open={rule.volumeMode > 0} className="bt-reveal-rows">
+                    <div className={styles.settingRow}>
+                      <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "targetVolume", "Target volume")}</Text></div>
+                      <InlineRange payload={payload} styles={styles} label={t(payload, "targetVolume", "Target volume")} value={rule.volumePercent} onCommit={value => action("appRuleUpdate", { exeName: rule.exeName, volumePercent: value })} />
+                    </div>
+                  </Reveal>
+                </div>
+              </Reveal>
+            </motion.div>;
+          })}
+        </AnimatePresence>
+      </div>
+      <Reveal open={rules.length === 0} className="bt-reveal-rows"><Empty payload={payload} styles={styles} /></Reveal>
+      <Reveal open={rules.length > 0}>
+        <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-end")}>
+          <ConfirmButton payload={payload} label={t(payload, "clearAllRules", "Clear all rules")} confirmLabel={t(payload, "confirmClearAll", "Clear all rules?")} icon={<Trash2Icon size={16} />} onConfirm={() => action("appRuleClear", { confirmed: true })} />
+        </div>
+      </Reveal>
+    </Section>
+    <Section icon={<FolderIcon size={18} />} title={t(payload, "folderRules", "Folder defaults")} description={t(payload, "folderRulesDescription", "Starting volume for apps launched from a folder.")} anchor="folders" styles={styles}>
+      <div className={mergeClasses(styles.actionRow, "bt-add-row bt-row-end")}>
+        <Button appearance="secondary" icon={<FolderPlusIcon size={17} />} onClick={() => action("folderRuleAdd")}>{t(payload, "addFolder", "Add folder")}</Button>
+      </div>
+      <div className={mergeClasses(styles.accList, folders.length > 0 && "bt-acc-list-separated")}>
+        <AnimatePresence initial={false}>
+          {folders.map(rule => {
+            const isOpen = openFolder === rule.id;
+            return <motion.div className={styles.accItem} key={rule.id} {...itemMotion(reduce)}>
+              <div className={mergeClasses(styles.accHeader, "acc-header-polished")} role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => toggleFolder(rule.id)} onKeyDown={event => headerKeys(event, () => toggleFolder(rule.id))}>
+                <div className={styles.accCopy}>
+                  <div className="list-row-title"><Text weight="semibold">{rule.folderPath.split("\\").filter(Boolean).pop() || rule.folderPath}</Text></div>
+                  <Text className={`${styles.listMeta} truncate-text`} size={200}>{rule.folderPath}</Text>
+                </div>
+                <span className="chip-polished">{rule.volumePercent}%</span>
+                <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
+              </div>
+              <Reveal open={isOpen}>
+                <div className={styles.accDetail}>
+                  <div className={styles.settingRow}>
+                    <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "targetVolume", "Target volume")}</Text></div>
+                    <InlineRange payload={payload} styles={styles} label={t(payload, "targetVolume", "Target volume")} value={rule.volumePercent} onCommit={value => action("folderRuleUpdate", { ...rule, volumePercent: value })} />
+                  </div>
+                  <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-between")}>
+                    <Button appearance="secondary" icon={<FolderIcon size={17} />} onClick={() => action("folderRuleBrowse", { id: rule.id })}>{t(payload, "changeFolder", "Change folder")}</Button>
+                    <ConfirmButton payload={payload} label={t(payload, "delete", "Delete")} icon={<Trash2Icon size={16} />} onConfirm={() => action("folderRuleRemove", { id: rule.id, confirmed: true })} />
+                  </div>
+                </div>
+              </Reveal>
+            </motion.div>;
+          })}
+        </AnimatePresence>
+      </div>
+      <Reveal open={folders.length === 0} className="bt-reveal-rows"><Empty payload={payload} styles={styles} text={t(payload, "folderRulesEmpty", "No folder defaults.")} /></Reveal>
+    </Section>
+  </>;
+}
+
+// ── Appearance ────────────────────────────────────────────────────────────────
+
+type ColorKey = "sliderThumbColor" | "sliderTrackFillColor" | "sliderTrackBackgroundColor" | "peakMeterColor" | "windowBackgroundColor" | "textColor" | "accentGlowColor";
+const COLOR_KEYS: ColorKey[] = ["sliderThumbColor", "sliderTrackFillColor", "sliderTrackBackgroundColor", "peakMeterColor", "windowBackgroundColor", "textColor", "accentGlowColor"];
+
+/** Accepts #RGB, #RRGGBB (with or without #) and the host's #AARRGGBB fallback. */
+function parseHex(raw: unknown): string | null {
+  const value = String(raw ?? "").trim().replace(/^#/, "");
+  if (/^[0-9a-f]{6}$/i.test(value)) return `#${value.toUpperCase()}`;
+  if (/^[0-9a-f]{3}$/i.test(value)) return `#${value.split("").map(c => c + c).join("").toUpperCase()}`;
+  if (/^[0-9a-f]{8}$/i.test(value)) return `#${value.slice(2).toUpperCase()}`;
+  return null;
+}
+
+function rgba(hex: string, alpha: number) {
+  const parsed = parseHex(hex) ?? "#000000";
+  const n = parseInt(parsed.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${Math.min(Math.max(alpha, 0), 1)})`;
+}
+
+/** Per-key throttle (≤ 1 message per interval) with a trailing commit of the latest value. */
+function useThrottledSetting(setSetting: SetSetting, interval = COLOR_SEND_INTERVAL_MS) {
+  const setRef = useRef(setSetting);
+  setRef.current = setSetting;
+  const entries = useRef(new Map<SettingKey, { last: number; timer?: number; pending?: SettingValue }>());
+  useEffect(() => () => {
+    entries.current.forEach((entry, key) => {
+      window.clearTimeout(entry.timer);
+      if (entry.pending !== undefined) setRef.current(key, entry.pending);
+    });
+  }, []);
+  return useCallback((key: SettingKey, value: SettingValue) => {
+    const map = entries.current;
+    const entry = map.get(key) ?? { last: 0 };
+    map.set(key, entry);
+    const wait = entry.last + interval - performance.now();
+    if (wait <= 0 && entry.timer === undefined) {
+      entry.last = performance.now();
+      setRef.current(key, value);
+      return;
+    }
+    entry.pending = value;
+    if (entry.timer === undefined) {
+      entry.timer = window.setTimeout(() => {
+        entry.timer = undefined;
+        entry.last = performance.now();
+        const latest = entry.pending;
+        entry.pending = undefined;
+        if (latest !== undefined) setRef.current(key, latest);
+      }, Math.max(wait, 0));
+    }
+  }, [interval]);
+}
+
+function ColorRow({ payload, styles, label, value, onChange }: { payload: SettingsPayload; styles: Styles; label: string; value: string; onChange: (hex: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+  const revert = useRef(false);
+  const commit = () => {
+    setEditing(false);
+    if (revert.current) { revert.current = false; return; }
+    const hex = parseHex(draft);
+    if (hex && hex !== value) onChange(hex);
+  };
+  const invalid = editing && draft.trim().length >= 4 && !parseHex(draft);
+  return <div className={styles.settingRow}>
+    <Text weight="semibold">{label}</Text>
+    <div className={mergeClasses(styles.rowActions, "bt-color-controls")}>
+      <input
+        className={mergeClasses("bt-hex-input", invalid && "bt-hex-invalid")}
+        value={editing ? draft : value}
+        spellCheck={false}
+        autoComplete="off"
+        maxLength={9}
+        aria-label={`${label} · ${t(payload, "hexColor", "Hex color")}`}
+        aria-invalid={invalid || undefined}
+        onFocus={event => { setDraft(value); setEditing(true); event.currentTarget.select(); }}
+        onChange={event => setDraft(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={event => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") { revert.current = true; event.currentTarget.blur(); }
+        }}
+      />
+      <input className={`${styles.colorInput} color-input-polished`} type="color" value={value.toLowerCase()} aria-label={label} onChange={event => onChange(event.currentTarget.value.toUpperCase())} />
+    </div>
+  </div>;
+}
+
+function ThemePreview({ payload, colors, opacity }: { payload: SettingsPayload; colors: Record<ColorKey, string>; opacity: number }) {
+  const label = t(payload, "preview", "Preview");
+  const rows = [{ level: 72, peak: 58 }, { level: 40, peak: 31 }];
+  return <div className="bt-preview" role="img" aria-label={label}>
+    <span className="bt-preview-label">{label}</span>
+    <div className="bt-preview-stage">
+      <div
+        className="bt-preview-flyout"
+        style={{
+          backgroundColor: rgba(colors.windowBackgroundColor, opacity),
+          color: colors.textColor,
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px ${rgba(colors.accentGlowColor, 0.35)}, 0 10px 32px ${rgba(colors.accentGlowColor, 0.24)}`,
+        }}
+      >
+        <div className="bt-preview-device">
+          <span className="bt-preview-name">{payload.appName || "BetterTrumpet"}</span>
+        </div>
+        {rows.map((row, index) => <div className="bt-preview-row" key={index}>
+          <span className="bt-preview-app" style={{ backgroundColor: rgba(colors.accentGlowColor, 0.85) }} />
+          <span className="bt-preview-slider">
+            <span className="bt-preview-track" style={{ backgroundColor: colors.sliderTrackBackgroundColor }}>
+              <span className="bt-preview-fill" style={{ width: `${row.level}%`, backgroundColor: colors.sliderTrackFillColor }} />
+            </span>
+            <span className="bt-preview-peak" style={{ width: `${row.peak}%`, backgroundColor: colors.peakMeterColor }} />
+            <span className="bt-preview-thumb" style={{ left: `${row.level}%`, backgroundColor: colors.sliderThumbColor }} />
           </span>
-          <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
-        </div>
-        {isOpen && <div className={styles.accDetail}>
-          <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`rule-mute-${rule.exeName}`}>
-            <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "hardMute", "Keep muted")}</Text></div>
-            <Switch id={`rule-mute-${rule.exeName}`} checked={rule.hardMuted} aria-label={t(payload, "hardMute", "Keep muted")} onChange={(_, data) => action("appRuleUpdate", { exeName: rule.exeName, hardMuted: data.checked })} />
-          </label>
-          <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`rule-focus-${rule.exeName}`}>
-            <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "focusLostRule", "Focus lost")}</Text></div>
-            <Switch id={`rule-focus-${rule.exeName}`} checked={rule.focusLost} aria-label={t(payload, "focusLostRule", "Focus lost")} onChange={(_, data) => action("appRuleUpdate", { exeName: rule.exeName, focusLost: data.checked })} />
-          </label>
-          <div className={styles.settingRow}>
-            <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "volumeBehavior", "Volume behavior")}</Text></div>
-            <div className={styles.rowActions}>
-              <select className={`${styles.select} select-polished`} value={rule.volumeMode} aria-label={t(payload, "volumeBehavior", "Volume behavior")} onChange={event => action("appRuleUpdate", { exeName: rule.exeName, volumeMode: Number(event.currentTarget.value) })}>
-                <option value={0}>{t(payload, "modeNone", "None")}</option>
-                <option value={1}>{t(payload, "modeLaunch", "Set at launch")}</option>
-                <option value={2}>{t(payload, "modeLock", "Lock")}</option>
-              </select>
-              {rule.volumeMode > 0 && <InlineRange styles={styles} label={t(payload, "targetVolume", "Target volume")} value={rule.volumePercent} onCommit={value => action("appRuleUpdate", { exeName: rule.exeName, volumePercent: value })} />}
-            </div>
-          </div>
-        </div>}
-      </div>;
-    })}</div> : <Empty payload={payload} styles={styles} />}
-    {payload.collections.appRules.length > 0 && <div className={styles.actionRow}><Button appearance="subtle" onClick={() => action("appRuleClear")}>{t(payload, "clearAllRules", "Clear all rules")}</Button></div>}
-  </Section>
-  <Section icon={<FolderIcon size={18} />} title={t(payload, "folderRules", "Folder defaults")} description={t(payload, "folderRulesDescription", "Starting volume for apps launched from a folder.")} anchor="folders" styles={styles}>
-    <div className={styles.actionRow}><Button appearance="primary" icon={<FolderIcon size={17} />} onClick={() => action("folderRuleAdd")}>{t(payload, "addFolder", "Add folder")}</Button></div>
-    {payload.collections.folderRules.length ? <div className={styles.accList}>{payload.collections.folderRules.map(rule => {
-      const isOpen = openFolder === rule.id;
-      return <div className={styles.accItem} key={rule.id}>
-        <div className={mergeClasses(styles.accHeader, "acc-header-polished")} role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => setOpenFolder(current => current === rule.id ? null : rule.id)} onKeyDown={event => headerKeys(event, () => setOpenFolder(current => current === rule.id ? null : rule.id))}>
-          <div className={styles.accCopy}>
-            <div className="list-row-title"><Text weight="semibold">{rule.folderPath.split("\\").filter(Boolean).pop() || rule.folderPath}</Text></div>
-            <Text className={`${styles.listMeta} truncate-text`} size={200}>{rule.folderPath}</Text>
-          </div>
-          <span className="chip-polished">{rule.volumePercent}%</span>
-          <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
-        </div>
-        {isOpen && <div className={styles.accDetail}>
-          <div className={styles.settingRow}>
-            <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "targetVolume", "Target volume")}</Text></div>
-            <InlineRange styles={styles} label={t(payload, "targetVolume", "Target volume")} value={rule.volumePercent} onCommit={value => action("folderRuleUpdate", { ...rule, volumePercent: value })} />
-          </div>
-          <div className={styles.actionRow}>
-            <Button appearance="secondary" icon={<FolderIcon size={17} />} onClick={() => action("folderRuleBrowse", { id: rule.id })}>{t(payload, "changeFolder", "Change folder")}</Button>
-            <Button appearance="subtle" icon={<Trash2Icon size={17} />} onClick={() => action("folderRuleRemove", { id: rule.id })}>{t(payload, "delete", "Delete")}</Button>
-          </div>
-        </div>}
-      </div>;
-    })}</div> : <Text className={styles.empty}>{t(payload, "folderRulesEmpty", "No folder defaults.")}</Text>}
-  </Section></>;
+          <span className="bt-preview-value">{row.level}</span>
+        </div>)}
+      </div>
+    </div>
+  </div>;
 }
 
 function AppearancePage({ payload, styles, setSetting, action }: PageProps) {
+  const reduce = useReducedMotion();
   const [themeName, setThemeName] = useState("");
-  const colorFields: { key: SettingKey; label: string }[] = [
+  const [savedFlash, flashSaved] = useFlash<boolean>();
+  const [overrides, setOverrides] = useState<Partial<Record<ColorKey, string>>>({});
+  const [liveOpacity, setLiveOpacity] = useState<number | null>(null);
+  const editedAt = useRef<Partial<Record<ColorKey, number>>>({});
+  const sendThrottled = useThrottledSetting(setSetting);
+
+  // Local edits win until the host echoes them back (or they go stale), so the
+  // swatch, hex field and preview never jump back mid-drag.
+  useEffect(() => {
+    setOverrides(current => {
+      let changed = false;
+      const next = { ...current };
+      for (const key of Object.keys(current) as ColorKey[]) {
+        const age = performance.now() - (editedAt.current[key] ?? 0);
+        if (parseHex(payload.values[key]) === current[key] || age > 900) { delete next[key]; changed = true; }
+      }
+      return changed ? next : current;
+    });
+  }, [payload.values]);
+  useEffect(() => { setLiveOpacity(null); }, [payload.values.windowBackgroundOpacity]);
+
+  const colors = Object.fromEntries(COLOR_KEYS.map(key => [key, overrides[key] ?? parseHex(payload.values[key]) ?? "#000000"])) as Record<ColorKey, string>;
+  const setColor = (key: ColorKey, hex: string) => {
+    editedAt.current[key] = performance.now();
+    setOverrides(current => ({ ...current, [key]: hex }));
+    sendThrottled(key, hex);
+  };
+  const opacityPercent = Math.round(Number(payload.values.windowBackgroundOpacity) * 100);
+  const previewOpacity = (liveOpacity ?? opacityPercent) / 100;
+
+  const colorFields: { key: ColorKey; label: string }[] = [
     { key: "sliderThumbColor", label: t(payload, "sliderThumb", "Thumb") },
     { key: "sliderTrackFillColor", label: t(payload, "sliderFill", "Fill") },
     { key: "sliderTrackBackgroundColor", label: t(payload, "sliderTrack", "Track") },
@@ -441,35 +796,80 @@ function AppearancePage({ payload, styles, setSetting, action }: PageProps) {
     { key: "textColor", label: t(payload, "textColor", "Text") },
     { key: "accentGlowColor", label: t(payload, "accentColor", "Accent") },
   ];
+  const peakStyles = [
+    t(payload, "peakStyleClassic", "Classic"),
+    t(payload, "peakStyleDotted", "Dotted"),
+    t(payload, "peakStyleBlocks", "Blocks"),
+    t(payload, "peakStyleBars", "Bars"),
+    t(payload, "peakStyleWave", "Wave"),
+  ];
+  const themes = payload.collections.themes;
+  const isCustom = !themes.some(theme => theme.name === payload.collections.activeThemeName);
+  const chipMotion = {
+    initial: { opacity: 0, scale: reduce ? 1 : 0.94 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: reduce ? 1 : 0.94 },
+    transition: timing(reduce, 0.18),
+  };
+  const checkMark = (active: boolean) => <AnimatePresence initial={false}>
+    {active && <motion.span key="check" className="bt-check" initial={{ opacity: 0, scale: 0.5, width: 0 }} animate={{ opacity: 1, scale: 1, width: 14 }} exit={{ opacity: 0, scale: 0.5, width: 0 }} transition={timing(reduce, 0.18)}>
+      <CheckIcon size={14} className={styles.themeActiveMark} />
+    </motion.span>}
+  </AnimatePresence>;
+  const saveTheme = () => {
+    const trimmed = themeName.trim();
+    if (!trimmed) return;
+    action("themeSave", { name: trimmed });
+    setThemeName("");
+    flashSaved(true);
+  };
+
   return <>
     <Section icon={<BlendIcon size={18} />} title={t(payload, "presets", "Presets")} description={t(payload, "appearanceDescription", "Choose a coordinated color palette, then fine tune it below.")} anchor="themes" styles={styles}>
-      <div className={styles.themeFlow}>{payload.collections.themes.map(theme => {
-        const isActive = payload.collections.activeThemeName === theme.name;
-        return <div className={styles.themeItem} key={theme.name}>
-          <button
-            className={mergeClasses(styles.themeChip, "theme-row-polished", isActive && styles.themeChipSelected)}
-            aria-pressed={isActive}
-            onClick={() => action("themeSelect", { name: theme.name })}
-          >
-            <span className={styles.swatches}>{theme.colors.map((color, index) => <span key={`${color}-${index}`} className={styles.swatch} style={{ backgroundColor: color }} />)}</span>
-            <Text weight="semibold">{theme.name}</Text>
-            {isActive && <CheckIcon size={14} className={styles.themeActiveMark} />}
-          </button>
-          {theme.isCustom && <Button className={styles.themeDelete} appearance="subtle" icon={<Trash2Icon size={15} />} aria-label={t(payload, "deleteTheme", "Delete theme")} title={t(payload, "deleteTheme", "Delete theme")} onClick={() => action("themeDelete", { name: theme.name })} />}
-        </div>;
-      })}</div>
+      <div className={mergeClasses(styles.themeFlow, "bt-theme-flow")}>
+        <AnimatePresence initial={false} mode="popLayout">
+          {themes.map(theme => {
+            const isActive = payload.collections.activeThemeName === theme.name;
+            return <motion.div layout={reduce ? false : "position"} className={styles.themeItem} key={theme.name} {...chipMotion}>
+              <button
+                className={mergeClasses(styles.themeChip, "theme-row-polished", isActive && styles.themeChipSelected)}
+                aria-pressed={isActive}
+                onClick={() => action("themeSelect", { name: theme.name })}
+              >
+                <span className={styles.swatches}>{theme.colors.map((color, index) => <span key={`${color}-${index}`} className={styles.swatch} style={{ backgroundColor: color }} />)}</span>
+                <Text weight="semibold">{theme.name}</Text>
+                {checkMark(isActive)}
+              </button>
+              {theme.isCustom && <ConfirmButton payload={payload} iconOnly size="small" className="bt-theme-delete" label={t(payload, "deleteTheme", "Delete theme")} icon={<Trash2Icon size={15} />} onConfirm={() => action("themeDelete", { name: theme.name, confirmed: true })} />}
+            </motion.div>;
+          })}
+          {isCustom && <motion.div layout={reduce ? false : "position"} className={styles.themeItem} key="__custom" {...chipMotion}>
+            <div className={mergeClasses(styles.themeChip, styles.themeChipSelected, "bt-theme-custom")} aria-current="true">
+              <span className={styles.swatches}>{[colors.sliderThumbColor, colors.sliderTrackFillColor, colors.peakMeterColor, colors.windowBackgroundColor].map((color, index) => <span key={index} className={mergeClasses(styles.swatch, "bt-swatch-live")} style={{ backgroundColor: color }} />)}</span>
+              <Text weight="semibold">{t(payload, "customTheme", "Custom")}</Text>
+              {checkMark(true)}
+            </div>
+          </motion.div>}
+        </AnimatePresence>
+      </div>
     </Section>
     <Section icon={<SlidersHorizontalIcon size={18} />} title={t(payload, "customColors", "Custom colors")} description={t(payload, "customColorsTweakHint", "The selected preset lands here; tweak any channel to make it yours.")} anchor="colors" styles={styles}>
-      {colorFields.map(field => <div className={styles.settingRow} key={field.key}><Text weight="semibold">{field.label}</Text><div className={styles.rowActions}><code className="color-hex-polished">{String(payload.values[field.key]).slice(0, 7).toUpperCase()}</code><input className={`${styles.colorInput} color-input-polished`} type="color" value={String(payload.values[field.key]).slice(0, 7)} aria-label={field.label} onChange={event => setSetting(field.key, event.currentTarget.value)} /></div></div>)}
-      <RangeRow styles={styles} label={t(payload, "windowOpacity", "Window opacity")} value={Math.round(Number(payload.values.windowBackgroundOpacity) * 100)} min={5} max={100} suffix="%" onCommit={value => setSetting("windowBackgroundOpacity", value / 100)} />
-      <SelectRow styles={styles} label={t(payload, "peakStyle", "Peak meter style")} value={Number(payload.values.peakMeterStyleIndex)} options={[0,1,2,3,4].map((value, index) => ({ value, label: ["Classic", "Dotted", "Blocks", "Bars", "Wave"][index] }))} onChange={value => setSetting("peakMeterStyleIndex", value)} />
-      <div className={styles.actionRow}>
-        <Button appearance="secondary" onClick={() => action("themeRandomize")}>{t(payload, "randomize", "Randomize")}</Button>
-        <Button appearance="secondary" onClick={() => action("themeReset")}>{t(payload, "reset", "Reset")}</Button>
-        <Input className={styles.controlGrow} value={themeName} onChange={(_, data) => setThemeName(data.value)} placeholder={t(payload, "profileName", "Theme name")} />
-        <Button appearance="primary" onClick={() => { action("themeSave", { name: themeName }); setThemeName(""); }}>{t(payload, "saveTheme", "Save theme")}</Button>
-        <Button appearance="subtle" icon={<DownloadIcon size={17} />} onClick={() => action("themeExport")}>{t(payload, "export", "Export")}</Button>
-        <Button appearance="subtle" icon={<UploadIcon size={17} />} onClick={() => action("themeImport")}>{t(payload, "import", "Import")}</Button>
+      <ThemePreview payload={payload} colors={colors} opacity={previewOpacity} />
+      {colorFields.map(field => <ColorRow key={field.key} payload={payload} styles={styles} label={field.label} value={colors[field.key]} onChange={hex => setColor(field.key, hex)} />)}
+      <RangeRow payload={payload} styles={styles} label={t(payload, "windowOpacity", "Window opacity")} value={opacityPercent} min={5} max={100} suffix="%" onChange={setLiveOpacity} onCommit={value => setSetting("windowBackgroundOpacity", value / 100)} />
+      <SelectRow styles={styles} label={t(payload, "peakStyle", "Peak meter style")} value={Number(payload.values.peakMeterStyleIndex)} options={peakStyles.map((label, value) => ({ value, label }))} onChange={value => setSetting("peakMeterStyleIndex", value)} />
+      <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-tool-row")}>
+        <Button appearance="subtle" icon={<ShuffleIcon size={16} />} onClick={() => action("themeRandomize")}>{t(payload, "randomize", "Randomize")}</Button>
+        <Button appearance="subtle" icon={<RefreshCwIcon size={16} />} onClick={() => action("themeReset")}>{t(payload, "reset", "Reset")}</Button>
+        <span className="bt-tool-spacer" />
+        <Button appearance="subtle" icon={<DownloadIcon size={16} />} onClick={() => action("themeExport")}>{t(payload, "export", "Export")}</Button>
+        <Button appearance="subtle" icon={<UploadIcon size={16} />} onClick={() => action("themeImport")}>{t(payload, "import", "Import")}</Button>
+      </div>
+      <div className={mergeClasses(styles.actionRow, "bt-save-bar")}>
+        <Input className={styles.controlGrow} value={themeName} onChange={(_, data) => setThemeName(data.value)} onKeyDown={event => { if (event.key === "Enter") saveTheme(); }} placeholder={t(payload, "themeName", "Theme name")} aria-label={t(payload, "themeName", "Theme name")} />
+        <Button appearance="primary" disabled={!savedFlash && !themeName.trim()} onClick={saveTheme}>
+          <FeedbackContent done={Boolean(savedFlash)} icon={<SaveIcon size={17} />} label={t(payload, "saveTheme", "Save theme")} doneLabel={t(payload, "saved", "Saved")} />
+        </Button>
       </div>
     </Section>
     <Section icon={<MusicIcon size={18} />} title={t(payload, "dynamicAlbum", "Dynamic album theme")} description={t(payload, "dynamicAlbumDescription", "Adapt colors to the current artwork.")} anchor="albumArt" styles={styles}>
@@ -479,23 +879,77 @@ function AppearancePage({ payload, styles, setSetting, action }: PageProps) {
 }
 
 function MediaPage({ payload, styles, setSetting }: PageProps) {
-  return <><Section icon={<MusicIcon size={18} />} title={t(payload, "mediaPopup", "Media popup")} description={t(payload, "mediaPopupDescription", "Playback controls on tray hover.")} anchor="mediaPopup" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="mediaPopupEnabled" label={t(payload, "enableMediaPopup", "Enable media popup")} /></Section><Section icon={<MouseIcon size={18} />} title={t(payload, "interaction", "Interaction")} anchor="mediaInteraction" styles={styles}><RangeRow styles={styles} label={t(payload, "hoverDelay", "Hover delay")} value={Number(payload.values.mediaPopupHoverDelay)} min={0.5} max={5} step={0.25} suffix={` ${t(payload, "seconds", "s")}`} onCommit={value => setSetting("mediaPopupHoverDelay", value)} /><ToggleRow payload={payload} styles={styles} settingKey="showWhenPaused" label={t(payload, "showWhenPaused", "Show when paused")} /><ToggleRow payload={payload} styles={styles} settingKey="mediaPopupRememberExpanded" label={t(payload, "rememberExpanded", "Remember expanded state")} /></Section></>;
+  return <>
+    <Section icon={<MusicIcon size={18} />} title={t(payload, "mediaPopupSection", "Display")} description={t(payload, "mediaPopupDescription", "Playback controls on tray hover.")} anchor="mediaPopup" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="mediaPopupEnabled" label={t(payload, "enableMediaPopup", "Enable media popup")} /></Section>
+    <Section icon={<MouseIcon size={18} />} title={t(payload, "interaction", "Interaction")} anchor="mediaInteraction" styles={styles}><RangeRow payload={payload} styles={styles} label={t(payload, "hoverDelay", "Hover delay")} value={Number(payload.values.mediaPopupHoverDelay)} min={0.5} max={5} step={0.25} suffix={` ${t(payload, "secondsShort", "s")}`} onCommit={value => setSetting("mediaPopupHoverDelay", value)} /><ToggleRow payload={payload} styles={styles} settingKey="showWhenPaused" label={t(payload, "showWhenPaused", "Show when paused")} /><ToggleRow payload={payload} styles={styles} settingKey="mediaPopupRememberExpanded" label={t(payload, "rememberExpanded", "Remember expanded state")} /></Section>
+  </>;
 }
 
 function PerformancePage({ payload, styles, setSetting }: PageProps) {
-  return <><Section icon={<ActivityIcon size={18} />} title={t(payload, "ecoMode", "Eco mode")} description={t(payload, "ecoModeDescription", "Reduce rendering work and CPU usage.")} anchor="eco" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="ecoMode" label={t(payload, "enableEcoMode", "Enable eco mode")} /><ToggleRow payload={payload} styles={styles} settingKey="autoEcoMode" label={t(payload, "autoEcoMode", "Enable on battery")} /></Section><Section icon={<SlidersHorizontalIcon size={18} />} title={t(payload, "animations", "Animations")} anchor="animations" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useSmoothVolumeAnimation" label={t(payload, "smoothAnimation", "Smooth volume animation")} /><RangeRow styles={styles} label={t(payload, "animationSpeed", "Animation speed")} value={Number(payload.values.volumeAnimationSpeed)} min={1} max={10} onCommit={value => setSetting("volumeAnimationSpeed", value)} /></Section><Section icon={<Volume2Icon size={18} />} title={t(payload, "peakMeter", "Peak meter")} anchor="peakMeter" styles={styles}><SelectRow styles={styles} label={t(payload, "refreshRate", "Refresh rate")} value={Number(payload.values.peakMeterFps)} options={[5,20,30,60].map(value => ({ value, label: `${value} FPS` }))} onChange={value => setSetting("peakMeterFps", value)} /><div className={`${styles.settingRow} setting-row-polished`}><div className={styles.settingCopy}><Text weight="semibold">{t(payload, "effectiveRate", "Effective rate")}</Text><Text className={styles.settingDescription} size={200}>{t(payload, "effectiveRateHint", "Actual rendering rate right now.")}</Text></div><span className="chip-polished">{payload.status.effectivePeakMeterFps} FPS{payload.status.ecoModeActive ? ` · ${t(payload, "ecoActive", "Eco")}` : ""}</span></div></Section></>;
+  const smooth = Boolean(payload.values.useSmoothVolumeAnimation);
+  const eco = payload.status.ecoModeActive;
+  return <>
+    <Section icon={<ActivityIcon size={18} />} title={t(payload, "ecoMode", "Eco mode")} description={t(payload, "ecoModeDescription", "Reduce rendering work and CPU usage.")} anchor="eco" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="ecoMode" label={t(payload, "enableEcoMode", "Enable eco mode")} /><ToggleRow payload={payload} styles={styles} settingKey="autoEcoMode" label={t(payload, "autoEcoMode", "Enable on battery")} /></Section>
+    <Section icon={<SlidersHorizontalIcon size={18} />} title={t(payload, "animations", "Animations")} anchor="animations" styles={styles}>
+      <ToggleRow payload={payload} styles={styles} settingKey="useSmoothVolumeAnimation" label={t(payload, "smoothAnimation", "Smooth volume animation")} />
+      <RangeRow payload={payload} styles={styles} label={t(payload, "animationSpeed", "Animation speed")} description={smooth ? undefined : t(payload, "requiresSmoothAnimation", "Turn on smooth volume animation to adjust the speed.")} disabled={!smooth} value={Number(payload.values.volumeAnimationSpeed)} min={1} max={10} suffix="/10" onCommit={value => setSetting("volumeAnimationSpeed", value)} />
+    </Section>
+    <Section icon={<Volume2Icon size={18} />} title={t(payload, "peakMeter", "Peak meter")} anchor="peakMeter" styles={styles}>
+      <SelectRow styles={styles} label={t(payload, "refreshRate", "Refresh rate")} description={eco ? t(payload, "disabledByEco", "Overridden by eco mode") : undefined} disabled={eco} value={Number(payload.values.peakMeterFps)} options={[5, 20, 30, 60].map(value => ({ value, label: `${value} FPS` }))} onChange={value => setSetting("peakMeterFps", value)} />
+      <div className={`${styles.settingRow} setting-row-polished`}><div className={styles.settingCopy}><Text weight="semibold">{t(payload, "effectiveRate", "Effective rate")}</Text><Text className={styles.settingDescription} size={200}>{t(payload, "effectiveRateHint", "Actual rendering rate right now.")}</Text></div><span className="chip-polished">{payload.status.effectivePeakMeterFps} FPS{eco ? ` · ${t(payload, "ecoActive", "Eco")}` : ""}</span></div>
+    </Section>
+  </>;
 }
 
 function UpdatesPage({ payload, styles, setSetting, action }: PageProps) {
-  return <Section icon={<RefreshCwIcon size={18} />} title={t(payload, "updates", "Updates")} description={t(payload, "updatesDescription", "Choose how BetterTrumpet is updated.")} anchor="updates" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="autoCheckForUpdates" label={t(payload, "autoUpdates", "Check automatically")} /><SelectRow styles={styles} label={t(payload, "notifyFor", "Notify for")} value={Number(payload.values.updateChannelIndex)} options={[0,1,2,3].map(value => ({ value, label: payload.labels[`updateChannel${value}`] || ["All updates", "Minor and major", "Major only", "Never"][value] }))} onChange={value => setSetting("updateChannelIndex", value)} /><ListRow styles={styles} title={payload.status.updateText || t(payload, "checkUpdate", "Check for updates")} meta={payload.status.updateDetail} actions={<><Button appearance="secondary" icon={payload.status.updateBusy ? <Spinner size="tiny" /> : <RefreshCwIcon size={17} />} disabled={payload.status.updateBusy} onClick={() => action("checkUpdate")}>{t(payload, "checkUpdate", "Check")}</Button>{payload.status.updateAvailable && <Button appearance="primary" icon={<DownloadIcon size={17} />} onClick={() => action("installUpdate")}>{t(payload, "installUpdate", "Install")}</Button>}</>} /></Section>;
+  const autoCheck = Boolean(payload.values.autoCheckForUpdates);
+  return <Section icon={<RefreshCwIcon size={18} />} title={t(payload, "updatesSection", "Update checks")} description={t(payload, "updatesDescription", "Choose how BetterTrumpet is updated.")} anchor="updates" styles={styles}>
+    <ToggleRow payload={payload} styles={styles} settingKey="autoCheckForUpdates" label={t(payload, "autoUpdates", "Check automatically")} />
+    <SelectRow styles={styles} label={t(payload, "notifyFor", "Notify for")} description={autoCheck ? undefined : t(payload, "requiresAutoCheck", "Turn on automatic checks to choose which updates notify you.")} disabled={!autoCheck} value={Number(payload.values.updateChannelIndex)} options={[0, 1, 2, 3].map(value => ({ value, label: payload.labels[`updateChannel${value}`] || ["All updates", "Minor and major", "Major only", "Never"][value] }))} onChange={value => setSetting("updateChannelIndex", value)} />
+    <ListRow styles={styles} title={payload.status.updateText || t(payload, "checkUpdate", "Check for updates")} meta={payload.status.updateDetail} actions={<><Button appearance="secondary" icon={payload.status.updateBusy ? <Spinner size="tiny" /> : <RefreshCwIcon size={17} />} disabled={payload.status.updateBusy} onClick={() => action("checkUpdate")}>{t(payload, "checkUpdate", "Check")}</Button>{payload.status.updateAvailable && <Button appearance="primary" icon={<DownloadIcon size={17} />} onClick={() => action("installUpdate")}>{t(payload, "installUpdate", "Install")}</Button>}</>} />
+  </Section>;
 }
 
 function PrivacyPage({ payload, styles, action }: PageProps) {
-  return <><Section icon={<ShieldCheckIcon size={18} />} title={t(payload, "privacyPageTitle", "Privacy & data")} description={t(payload, "privacyPageSubtitle", "Telemetry, settings backup, and diagnostics.")} anchor="telemetry" styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="isTelemetryEnabled" label={t(payload, "privacy", "Send diagnostic data to help improve BetterTrumpet")} description={t(payload, "privacyDescription", "Send anonymous reports: ID, app version, OS, timestamp. No personal data.")} /><ToggleRow payload={payload} styles={styles} settingKey="announcementsEnabled" label={t(payload, "whatsNewFeed", "What's-new announcements")} description={t(payload, "whatsNewFeedDesc", "Receive news, polls and surveys pushed into the What's new window.")} /><div style={{marginTop: "8px"}}><Button appearance="subtle" size="small" onClick={() => action("openUrl", { url: "https://bettertrumpet.com/privacy/telemetry" })}>{t(payload, "privacyPolicy", "View privacy policy")}</Button></div></Section><Section icon={<FileTextIcon size={18} />} title={t(payload, "settingsData", "Settings data")} description={t(payload, "settingsDataDescription", "Back up or restore your configuration.")} anchor="data" styles={styles}><div className={styles.actionRow}><Button appearance="secondary" icon={<DownloadIcon size={17} />} onClick={() => action("settingsExport")}>{t(payload, "exportSettings", "Export settings")}</Button><Button appearance="secondary" icon={<UploadIcon size={17} />} onClick={() => action("settingsImport")}>{t(payload, "importSettings", "Import settings")}</Button></div></Section></>;
+  return <>
+    <Section icon={<ShieldCheckIcon size={18} />} title={t(payload, "privacySection", "Data sharing")} description={t(payload, "privacySectionDescription", "Choose what BetterTrumpet may send or receive.")} anchor="telemetry" styles={styles}>
+      <ToggleRow payload={payload} styles={styles} settingKey="isTelemetryEnabled" label={t(payload, "privacy", "Send diagnostic data to help improve BetterTrumpet")} description={t(payload, "privacyDescription", "Send anonymous reports: ID, app version, OS, timestamp. No personal data.")} />
+      <ToggleRow payload={payload} styles={styles} settingKey="announcementsEnabled" label={t(payload, "whatsNewFeed", "What's-new announcements")} description={t(payload, "whatsNewFeedDesc", "Receive news, polls and surveys pushed into the What's new window.")} />
+      <div className={mergeClasses(styles.actionRow, "bt-row-separated")}>
+        <Button appearance="subtle" icon={<ExternalLinkIcon size={16} />} iconPosition="after" onClick={() => action("openUrl", { url: "https://bettertrumpet.com/privacy/telemetry" })}>{t(payload, "privacyPolicy", "View privacy policy")}</Button>
+      </div>
+    </Section>
+    <Section icon={<FileTextIcon size={18} />} title={t(payload, "settingsData", "Settings data")} description={t(payload, "settingsDataDescription", "Back up or restore your configuration.")} anchor="data" styles={styles}><div className={styles.actionRow}><Button appearance="secondary" icon={<DownloadIcon size={17} />} onClick={() => action("settingsExport")}>{t(payload, "exportSettings", "Export settings")}</Button><Button appearance="secondary" icon={<UploadIcon size={17} />} onClick={() => action("settingsImport")}>{t(payload, "importSettings", "Import settings")}</Button></div></Section>
+  </>;
+}
+
+function HealthBlock({ payload }: { payload: SettingsPayload }) {
+  const health = payload.status.health?.trim();
+  if (!health) return null;
+  // HealthMonitor joins "Key: value" pairs with " | ".
+  const parts = health.split("|").map(part => part.trim()).filter(Boolean);
+  return <div className="bt-health">
+    <span className="bt-health-label">{t(payload, "appHealth", "App health")}</span>
+    <div className="bt-health-grid">
+      {parts.map((part, index) => {
+        const colon = part.indexOf(":");
+        return colon > 0
+          ? <span className="bt-health-item" key={index}><span className="bt-health-key">{part.slice(0, colon)}</span><span className="bt-health-value">{part.slice(colon + 1).trim()}</span></span>
+          : <span className="bt-health-item" key={index}><span className="bt-health-value">{part}</span></span>;
+      })}
+    </div>
+  </div>;
 }
 
 function AboutPage({ payload, styles, action }: PageProps) {
-  return <><Section icon={<InfoIcon size={18} />} title={`${payload.appName} ${payload.status.version}`} description="© 2026 xmn" styles={styles}><div className={styles.actionRow}><Button appearance="secondary" icon={<GithubIcon size={17} />} onClick={() => action("github")}>{t(payload, "github", "GitHub")}</Button><Button appearance="secondary" onClick={() => action("feedback")}>{t(payload, "feedback", "Feedback")}</Button><Button appearance="secondary" icon={<TriangleAlertIcon size={17} />} onClick={() => action("bugReport")}>{t(payload, "bugReport", "Report a bug")}</Button></div></Section><Section icon={<ActivityIcon size={18} />} title={t(payload, "diagnostics", "Diagnostics")} description={t(payload, "diagnosticsDescription", "Create a support bundle with logs and app state.")} styles={styles}><Text className={styles.empty}>{payload.status.health}</Text><div className={styles.actionRow}><Button appearance="primary" onClick={() => action("diagnostics")}>{t(payload, "diagnostics", "Export diagnostics")}</Button></div></Section>{payload.status.monkeyUnlocked && <Section icon={<MusicIcon size={18} />} title={t(payload, "monkeySound", "Alternate volume sound")} styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useMonkeyTickSound" label={t(payload, "monkeySound", "Use alternate volume sound")} description={t(payload, "monkeySoundDescription", "Play the unlocked sound set while adjusting volume.")} /></Section>}</>;
+  return <>
+    <Section icon={<InfoIcon size={18} />} title={`${payload.appName} ${payload.status.version}`} description="© 2026 xmn" anchor="about" styles={styles}><div className={styles.actionRow}><Button appearance="secondary" icon={<GithubIcon size={17} />} onClick={() => action("github")}>{t(payload, "github", "GitHub")}</Button><Button appearance="secondary" onClick={() => action("feedback")}>{t(payload, "feedback", "Feedback")}</Button><Button appearance="secondary" icon={<TriangleAlertIcon size={17} />} onClick={() => action("bugReport")}>{t(payload, "bugReport", "Report a bug")}</Button></div></Section>
+    <Section icon={<ActivityIcon size={18} />} title={t(payload, "diagnostics", "Diagnostics")} description={t(payload, "diagnosticsDescription", "Create a support bundle with logs and app state.")} anchor="diagnostics" styles={styles}>
+      <HealthBlock payload={payload} />
+      <div className={mergeClasses(styles.actionRow, "bt-row-separated")}><Button appearance="primary" icon={<DownloadIcon size={17} />} onClick={() => action("diagnostics")}>{t(payload, "exportDiagnostics", "Export diagnostics")}</Button></div>
+    </Section>
+    {payload.status.monkeyUnlocked && <Section icon={<MusicIcon size={18} />} title={t(payload, "monkeySound", "Alternate volume sound")} styles={styles}><ToggleRow payload={payload} styles={styles} settingKey="useMonkeyTickSound" label={t(payload, "monkeySound", "Use alternate volume sound")} description={t(payload, "monkeySoundDescription", "Play the unlocked sound set while adjusting volume.")} /></Section>}
+  </>;
 }
 
 function UnsupportedPage({ page, payload, styles, openClassic, isOpeningLegacy }: PageProps) {

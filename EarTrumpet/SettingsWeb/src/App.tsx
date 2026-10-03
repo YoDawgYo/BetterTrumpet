@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -16,11 +16,11 @@ import {
   webLightTheme,
 } from "@fluentui/react-components";
 import {
-  AArrowDownIcon,
   ActivityIcon,
   ArrowUpRightIcon,
   BlendIcon,
   GithubIcon,
+  HistoryIcon,
   InfoIcon,
   KeyboardIcon,
   ListChecksIcon,
@@ -73,32 +73,34 @@ const useStyles = makeStyles({
   // ── Sidebar: quiet near-black rail, reads as a native app panel ──
   sidebar: {
     display: "flex", minHeight: 0, flexDirection: "column",
-    padding: "12px 8px", backgroundColor: "#050706", borderRadius: "18px",
+    padding: "8px 8px 6px", backgroundColor: "#050706", borderRadius: "18px",
     "@media (max-width: 680px)": { display: "none" },
   },
-  sidebarCollapsed: { overflow: "hidden", minWidth: 0, padding: "12px 8px" },
-  sidebarHeader: { display: "flex", alignItems: "center", gap: "10px", minHeight: "40px", padding: "0 4px 12px", marginBottom: "8px", flexShrink: 0 },
-  sidebarHeaderCollapsed: { padding: "0 0 12px" },
+  sidebarCollapsed: { overflow: "hidden", minWidth: 0, padding: "8px 8px 6px" },
+  // Vertical budget at the default 598px window: header 36 + search 40 +
+  // footer 41 leaves ~451px for the nav, which holds all 11 pages (~448px).
+  sidebarHeader: { display: "flex", alignItems: "center", gap: "10px", minHeight: "32px", padding: "0 2px", marginBottom: "4px", flexShrink: 0 },
+  sidebarHeaderCollapsed: { padding: 0 },
   wordmark: { display: "block", overflow: "hidden", whiteSpace: "nowrap", fontSize: "14px", fontWeight: tokens.fontWeightSemibold, letterSpacing: "-0.01em", lineHeight: "1.2", color: "#F4F7F5" },
   navLabel: { display: "inline-block", overflow: "hidden", whiteSpace: "nowrap", verticalAlign: "middle" },
   navLabelCollapsed: { opacity: 0, pointerEvents: "none" },
-  logo: { width: "28px", height: "28px", objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 1px 5px rgba(0,0,0,.45))", transitionProperty: "filter, transform", transitionDuration: "240ms", pointerEvents: "none" },
+  logo: { width: "26px", height: "26px", objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 1px 5px rgba(0,0,0,.45))", transitionProperty: "filter, transform", transitionDuration: "240ms", pointerEvents: "none" },
   logoButton: {
-    display: "grid", placeItems: "center", flexShrink: 0, width: "40px", height: "40px", padding: 0,
+    display: "grid", placeItems: "center", flexShrink: 0, width: "40px", height: "32px", padding: 0,
     border: "none", backgroundColor: "transparent", cursor: "pointer", borderRadius: "14px",
     transitionProperty: "background-color", transitionDuration: "160ms",
     ":hover": { backgroundColor: "rgba(255,255,255,.06)" },
     ":focus-visible": { outline: `2px solid ${ACCENT}`, outlineOffset: "2px" },
   },
   sidebarToggle: {
-    marginLeft: "auto", flexShrink: 0, minWidth: "36px", width: "36px", height: "36px", padding: 0,
+    marginLeft: "auto", flexShrink: 0, minWidth: "32px", width: "32px", height: "32px", padding: 0,
     color: "rgba(244,247,245,.6)", borderRadius: "14px", zIndex: 21,
     transitionProperty: "color, background-color, transform", transitionDuration: "180ms",
   },
   search: { marginBottom: 0, flexShrink: 0 },
   searchBox: {
     display: "flex", alignItems: "center", gap: "8px",
-    minHeight: "40px", padding: "0 12px", borderRadius: "14px",
+    height: "32px", padding: "0 10px 0 12px", borderRadius: "14px",
     backgroundColor: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.12)",
     transitionProperty: "background-color", transitionDuration: "150ms",
     ":hover": { backgroundColor: "rgba(255,255,255,.09)" },
@@ -125,34 +127,38 @@ const useStyles = makeStyles({
     width: "100%", textAlign: "left", padding: "8px 10px", cursor: "pointer",
     border: "1px solid transparent", borderRadius: "14px",
     color: "rgba(244,247,245,.82)", backgroundColor: "transparent",
-    transitionProperty: "background-color", transitionDuration: "120ms",
+    transitionProperty: "background-color, border-color, color", transitionDuration: "140ms", transitionTimingFunction: "cubic-bezier(.33,1,.68,1)",
   },
   searchResultActive: { backgroundColor: "rgba(155,123,234,.14)", border: "1px solid rgba(155,123,234,.28)", color: "#F4F7F5" },
   searchResultLabel: { display: "block", width: "100%", fontSize: "13px", fontWeight: tokens.fontWeightSemibold, lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   searchResultMeta: { display: "block", width: "100%", fontSize: "11px", color: "rgba(244,247,245,.48)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   searchHidden: { visibility: "hidden", height: 0, marginBottom: 0, pointerEvents: "none" },
   navWrap: { position: "relative", flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column" },
-  nav: {
-    flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain",
-    scrollbarWidth: "none", msOverflowStyle: "none",
-    "::-webkit-scrollbar": { display: "none", width: 0, height: 0 },
-  },
+  // Scrollbar visibility lives in polish.css (`.sidebar-polished nav`): hidden
+  // at rest, a thin thumb on hover as a fallback for very short windows.
+  nav: { position: "relative", flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" },
   navFade: {
-    position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 1, height: "56px", pointerEvents: "none",
+    position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2, height: "40px", pointerEvents: "none",
     backgroundImage: "linear-gradient(180deg, rgba(5,7,6,0) 0%, #050706 88%)",
+    opacity: 0, transitionProperty: "opacity", transitionDuration: "180ms",
   },
-  category: { marginBottom: "16px" },
-  categoryTitle: { display: "block", padding: "0 12px 8px", color: "rgba(244,247,245,.48)", fontSize: "11px", fontWeight: tokens.fontWeightSemibold, whiteSpace: "nowrap", overflow: "hidden", transitionProperty: "opacity", transitionDuration: "180ms" },
+  navFadeVisible: { opacity: 1 },
+  category: { display: "flex", flexDirection: "column", gap: "2px", marginBottom: "6px", ":last-child": { marginBottom: 0 } },
+  categoryTitle: { display: "block", padding: "0 12px", color: "rgba(244,247,245,.46)", fontSize: "10.5px", lineHeight: "14px", fontWeight: tokens.fontWeightSemibold, whiteSpace: "nowrap", overflow: "hidden", transitionProperty: "opacity", transitionDuration: "180ms" },
   categoryTitleCollapsed: { opacity: 0, height: 0, padding: 0, margin: 0, overflow: "hidden" },
+  navItem: { position: "relative" },
+  // Shared sliding pill behind the active item (motion layoutId). Neutral
+  // capsule on purpose: navigation state is not the violet accent.
+  navPill: { position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none", backgroundColor: "rgba(255,255,255,.10)" },
   navButton: {
-    position: "relative", width: "100%", height: "42px", justifyContent: "flex-start", marginBottom: "4px",
+    position: "relative", zIndex: 1, width: "100%", height: "32px", minHeight: "32px", justifyContent: "flex-start",
     paddingLeft: "12px", paddingRight: "12px", overflow: "hidden", whiteSpace: "nowrap",
     borderRadius: "14px", fontWeight: tokens.fontWeightRegular,
     color: "rgba(244,247,245,.64)",
     transitionProperty: "background-color, color, transform", transitionDuration: "160ms",
   },
   navButtonCollapsed: {
-    width: "100%", height: "40px",
+    width: "100%", height: "32px",
     padding: 0, paddingLeft: "10px", paddingRight: 0, paddingInline: 0,
     minWidth: 0,
     overflow: "hidden",
@@ -161,14 +167,17 @@ const useStyles = makeStyles({
   },
   navIcon: { display: "inline-grid", flex: "0 0 20px", width: "20px", height: "20px", placeItems: "center", marginRight: "13px", color: "inherit", overflow: "hidden", transitionProperty: "margin, transform", transitionDuration: "200ms", "& > svg": { display: "block" } },
   navIconCollapsed: { marginRight: 0 },
-  navButtonSelected: { backgroundColor: "rgba(255,255,255,.10)", color: "#fff", fontWeight: tokens.fontWeightSemibold, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.04)" },
-  sidebarFooter: { flexShrink: 0, borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: "10px", marginTop: "10px" },
-  classicButton: { justifyContent: "flex-start", borderRadius: "14px", color: "rgba(244,247,245,.64)", transitionProperty: "color, background-color, transform", transitionDuration: "160ms" },
+  navButtonSelected: { color: "#fff", fontWeight: tokens.fontWeightSemibold },
+  sidebarFooter: { display: "flex", alignItems: "center", gap: "2px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,.08)", paddingTop: "4px", marginTop: "4px" },
+  sidebarFooterCollapsed: { flexDirection: "column", alignItems: "stretch" },
+  classicButton: { flex: "1 1 auto", minWidth: 0, height: "32px", minHeight: "32px", justifyContent: "flex-start", overflow: "hidden", whiteSpace: "nowrap", borderRadius: "14px", color: "rgba(244,247,245,.64)", transitionProperty: "color, background-color, transform", transitionDuration: "160ms" },
+  footerIconButton: { flexShrink: 0, minWidth: "32px", width: "32px", height: "32px", padding: 0, borderRadius: "14px", color: "rgba(244,247,245,.64)", transitionProperty: "color, background-color, transform", transitionDuration: "160ms" },
+  footerIconButtonCollapsed: { width: "100%" },
   externalMark: { marginLeft: "auto", display: "inline-flex", alignItems: "center", color: "rgba(244,247,245,.4)" },
 
   // ── Main: atmospheric sage surface ──
   main: { position: "relative", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden", contain: "layout paint", borderRadius: "18px", backgroundColor: "#11123f" },
-  mainScroll: { position: "relative", zIndex: 1, flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", scrollBehavior: "smooth" },
+  mainScroll: { position: "relative", zIndex: 1, flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", scrollBehavior: "smooth", scrollbarGutter: "stable both-edges" },
   // Soft scrims at the top and bottom edges of the scrollable main pane.
   // A plain gradient only (no backdrop-filter): re-blurring every scroll frame
   // in Chromium is expensive and makes the wheel feel heavy.
@@ -208,20 +217,20 @@ const useStyles = makeStyles({
   section: {
     marginBottom: "20px", overflow: "hidden",
     border: "1px solid rgba(255,255,255,.10)", borderRadius: "18px",
-    backgroundColor: "rgba(22, 18, 32, 0.68)",
+    backgroundColor: "rgba(22, 18, 32, 0.72)",
     boxShadow: "inset 0 1px 0 rgba(255,255,255,.05), 0 10px 28px rgba(10, 8, 15, 0.22)",
     transitionProperty: "transform, box-shadow, border-color", transitionDuration: "240ms",
     "@media (prefers-reduced-transparency: reduce)": { backgroundColor: "#1d1928" },
   },
-  sectionHeader: { padding: "20px 24px 16px" },
+  sectionHeader: { padding: "18px 24px 14px" },
   sectionTitle: { display: "block", lineHeight: "1.3" },
-  sectionDescription: { display: "block", marginTop: "5px", color: "rgba(244,247,245,.62)", maxWidth: "72ch", lineHeight: "1.5" },
+  sectionDescription: { display: "block", marginTop: "4px", color: "rgba(244,247,245,.62)", maxWidth: "72ch", lineHeight: "1.5" },
 
   // ── Setting rows ──
   settingList: { borderTop: "1px solid rgba(255,255,255,.10)" },
   settingRow: {
     display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "28px", alignItems: "center",
-    minHeight: "64px", padding: "0 22px",
+    minHeight: "64px", padding: "0 24px",
     transitionProperty: "background-color, transform", transitionDuration: "200ms",
     "& + &": { borderTop: "1px solid rgba(255,255,255,.09)" },
     "@media (max-width: 680px)": { gridTemplateColumns: "minmax(0, 1fr)", gap: "12px", padding: "16px 20px" },
@@ -238,7 +247,7 @@ const useStyles = makeStyles({
   list: { display: "grid", gap: 0, padding: 0 },
   listRow: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "16px", alignItems: "center", padding: "16px 24px", borderTop: "1px solid rgba(255,255,255,.09)", transitionProperty: "background-color, transform", transitionDuration: "200ms", "@media (max-width: 680px)": { gridTemplateColumns: "minmax(0, 1fr)", alignItems: "start" } },
   listMeta: { display: "block", marginTop: "3px", color: "rgba(244,247,245,.60)" },
-  empty: { padding: "20px 24px", color: "rgba(244,247,245,.58)" },
+  empty: { display: "block", padding: "16px 24px 18px", color: "rgba(244,247,245,.58)", lineHeight: "1.5" },
 
   // ── Accordion rows (profiles, app rules) ──
   accList: { display: "grid" },
@@ -278,7 +287,7 @@ const useStyles = makeStyles({
   colorInput: { width: "42px", height: "34px", padding: "3px", border: "1px solid rgba(255,255,255,.14)", borderRadius: "14px", backgroundColor: "rgba(255,255,255,.06)", transitionProperty: "transform, border-color", transitionDuration: "180ms" },
 
   // ── Window chrome ──
-  windowControls: { position: "fixed", top: "8px", right: "10px", zIndex: 30, display: "flex", alignItems: "center", gap: "4px" },
+  windowControls: { position: "fixed", top: "8px", right: "10px", zIndex: 30, display: "flex", alignItems: "center", gap: "2px" },
   dragRegion: { position: "fixed", top: 0, right: "104px", left: "264px", zIndex: 19, height: "44px", touchAction: "none", userSelect: "none", "@media (max-width: 680px)": { left: 0 } },
   dragRegionCollapsed: { left: "80px" },
   windowButton: {
@@ -338,6 +347,10 @@ const sageGlassDarkTheme = {
   colorCompoundBrandStrokeHover: ACCENT_STRONG,
   colorCompoundBrandStrokePressed: ACCENT,
   colorStrokeFocus2: ACCENT,
+  // Disabled controls read as dimmed glass instead of a near-black hole.
+  colorNeutralBackgroundDisabled: "rgba(255,255,255,.05)",
+  colorNeutralForegroundDisabled: "rgba(244,247,245,.32)",
+  colorNeutralStrokeDisabled: "rgba(255,255,255,.08)",
   colorSubtleBackgroundHover: "rgba(255,255,255,.06)",
   colorSubtleBackgroundPressed: "rgba(255,255,255,.03)",
   colorNeutralBackground1: "transparent",
@@ -646,20 +659,66 @@ function LoadingSkeleton({ styles }: { styles: ReturnType<typeof useStyles> }) {
   );
 }
 
+// UI state persisted across window openings (the WebView2 user data folder is
+// persistent). Storage can be unavailable, so every access is guarded.
+const STORAGE_SIDEBAR_COLLAPSED = "bt.settings.sidebarCollapsed";
+const STORAGE_LAST_PAGE = "bt.settings.lastPage";
+function readStored(key: string) { try { return window.localStorage.getItem(key); } catch { return null; } }
+function writeStored(key: string, value: string) { try { window.localStorage.setItem(key, value); } catch { /* storage unavailable */ } }
+
+// Runs once when a page mounts (AnimatePresence mode="wait" mounts it after
+// the previous page has exited), before paint.
+function PageMount({ onMount }: { onMount: () => void }) {
+  useLayoutEffect(() => { onMount(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return null;
+}
+
 export function App() {
   const styles = useStyles();
   const reduceMotion = useReducedMotion();
   const [payload, setPayload] = useState<SettingsPayload | null>(null);
-  const [selectedId, setSelectedId] = useState("general");
+  const [selectedId, setSelectedId] = useState(() => readStored(STORAGE_LAST_PAGE) || "general");
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [isOpeningLegacy, setIsOpeningLegacy] = useState(false);
   const [bridgeError, setBridgeError] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStored(STORAGE_SIDEBAR_COLLAPSED) === "1");
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mainEdgeFade, setMainEdgeFade] = useState({ top: false, bottom: false });
   const [resultIndex, setResultIndex] = useState(0);
   const [pendingAnchor, setPendingAnchor] = useState<{ anchor: string; pageId: string; nonce: number } | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { writeStored(STORAGE_SIDEBAR_COLLAPSED, sidebarCollapsed ? "1" : "0"); }, [sidebarCollapsed]);
+  // The state handler only keeps selectedId when the page still exists, so a
+  // stale stored id falls back to the first page and is overwritten here.
+  useEffect(() => { if (payload) writeStored(STORAGE_LAST_PAGE, selectedId); }, [payload, selectedId]);
+
+  const updateMainEdgeFade = () => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    const top = el.scrollTop > 8;
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight > 8;
+    setMainEdgeFade(current => current.top === top && current.bottom === bottom ? current : { top, bottom });
+  };
+  // Every page lands at its top; a pending search anchor then scrolls from there.
+  const resetMainScroll = () => {
+    mainScrollRef.current?.scrollTo({ top: 0, behavior: "instant" });
+    updateMainEdgeFade();
+  };
+  // Content height changes (page swap, accordions, async data) can make the
+  // pane (un)scrollable without a scroll event: recompute the edge fades.
+  const hasPayload = Boolean(payload);
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateMainEdgeFade());
+    observer.observe(el);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [hasPayload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const webview = window.chrome?.webview;
@@ -705,14 +764,21 @@ export function App() {
     if (!pendingAnchor || !payload) return;
     if (selectedId !== pendingAnchor.pageId) return;
     const nonce = pendingAnchor.nonce;
-    const frame = requestAnimationFrame(() => requestAnimationFrame(() => {
-      const element = document.getElementById(pendingAnchor.anchor);
+    // The target page mounts only after the previous one has exited (page
+    // crossfade), so wait for its anchor to exist inside that page.
+    let frame = 0;
+    let attempts = 0;
+    const tick = () => {
+      const candidate = document.getElementById(pendingAnchor.anchor);
+      const element = candidate?.closest(`[data-page-id="${pendingAnchor.pageId}"]`) ? candidate : null;
+      if (!element && attempts++ < 45) { frame = requestAnimationFrame(tick); return; }
       setPendingAnchor(current => current?.nonce === nonce ? null : current);
       if (!element) return;
       element.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
       element.classList.add("search-flash");
       window.setTimeout(() => element.classList.remove("search-flash"), 1800);
-    }));
+    };
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(tick); });
     return () => cancelAnimationFrame(frame);
   }, [pendingAnchor, payload, selectedId, reduceMotion]);
   const filteredGroups = useMemo(() => groups.map(group => ({ ...group, pages: group.pages.filter(page => !normalizedQuery || pageSearchText(payload ?? fallbackPayload, page).includes(normalizedQuery)) })).filter(group => group.pages.length), [groups, normalizedQuery, payload]);
@@ -740,7 +806,7 @@ export function App() {
       <WindowControls labels={{ minimize: payload?.labels.minimize || "Minimize", close: payload?.labels.close || "Close" }} styles={styles} />
       <AnimatePresence initial={false}>
       {payload ? (
-        <motion.div key="shell" style={{ height: "100%", position: "relative", isolation: "isolate" }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, filter: "blur(6px)" }} transition={{ duration: reduceMotion ? 0 : 0.24, ease: morphEase }}>
+        <motion.div key="shell" className={payload.status.ecoModeActive ? "eco-active" : undefined} style={{ height: "100%", position: "relative", isolation: "isolate" }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, filter: "blur(6px)" }} transition={{ duration: reduceMotion ? 0 : 0.24, ease: morphEase }}>
         <>
         <div className={mergeClasses(styles.shell, sidebarCollapsed && styles.shellCollapsed)}>
           <motion.aside
@@ -749,7 +815,7 @@ export function App() {
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.32, ease: morphEase, delay: 0.04 }}
           >
-            <SidebarBody styles={styles} payload={payload} groups={filteredGroups} selectedPage={selectedPage} collapsed={sidebarCollapsed} query={query} setQuery={setQuery} isOpeningLegacy={isOpeningLegacy} openClassic={() => openClassic()} navigate={setSelectedId} onToggleCollapsed={() => setSidebarCollapsed(value => !value)} results={searchResults} resultIndex={resultIndex} setResultIndex={setResultIndex} onOpenResult={openResult} />
+            <SidebarBody styles={styles} payload={payload} groups={filteredGroups} selectedPage={selectedPage} collapsed={sidebarCollapsed} query={query} setQuery={setQuery} isOpeningLegacy={isOpeningLegacy} openClassic={() => openClassic()} navigate={setSelectedId} onToggleCollapsed={() => setSidebarCollapsed(value => !value)} results={searchResults} resultIndex={resultIndex} setResultIndex={setResultIndex} onOpenResult={openResult} instanceId="rail" />
           </motion.aside>
           <motion.main
             className={styles.main}
@@ -758,16 +824,14 @@ export function App() {
             transition={{ duration: 0.36, ease: morphEase, delay: 0.08 }}
           >
             <div className={styles.atmosphere}><DitherField live={!payload.status.ecoModeActive} /></div>
-            <div className={mergeClasses(styles.mainScroll, "settings-main")} onScroll={event => {
-              const el = event.currentTarget;
-              const atTop = el.scrollTop <= 8;
-              const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
-              setMainEdgeFade({ top: !atTop, bottom: !atBottom });
-            }}>
+            <div ref={mainScrollRef} className={mergeClasses(styles.mainScroll, "settings-main")} onScroll={updateMainEdgeFade}>
               <div className={mergeClasses(styles.mobileHeader, "mobile-header-polished")}><img className={styles.logo} src={appIcon} alt="" /><Text weight="semibold">{payload.appName}</Text><Button className={styles.mobileMenuButton} appearance="subtle" icon={<MenuIcon size={20} />} aria-label={mobileDrawerOpen ? (payload.labels.closeNavigation || "Close navigation") : (payload.labels.openNavigation || "Open navigation")} aria-expanded={mobileDrawerOpen} title={mobileDrawerOpen ? (payload.labels.closeNavigation || "Close navigation") : (payload.labels.openNavigation || "Open navigation")} onClick={() => setMobileDrawerOpen(value => !value)} /></div>
-              <div className={styles.content}>
+              <div ref={contentRef} className={styles.content}>
                 {bridgeError && <MessageBar className={styles.message} intent="error"><MessageBarBody>{bridgeError}</MessageBarBody></MessageBar>}
-                {selectedPage && <motion.div key={selectedPage.id} initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.22, ease: morphEase }}><SettingsPage page={selectedPage} payload={payload} styles={styles} setSetting={setSetting} action={action} openClassic={openClassic} isOpeningLegacy={isOpeningLegacy} /></motion.div>}
+                {/* Crossfade: quick fade-out (120ms), then the next page mounts at the top and rises in. */}
+                <AnimatePresence mode="wait">
+                  {selectedPage && <motion.div key={selectedPage.id} data-page-id={selectedPage.id} initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }} animate={{ opacity: 1, y: 0, transition: { duration: reduceMotion ? 0 : 0.22, ease: morphEase } }} exit={{ opacity: 0, transition: { duration: reduceMotion ? 0 : 0.12, ease: "easeIn" } }}><PageMount onMount={resetMainScroll} /><SettingsPage page={selectedPage} payload={payload} styles={styles} setSetting={setSetting} action={action} openClassic={openClassic} isOpeningLegacy={isOpeningLegacy} /></motion.div>}
+                </AnimatePresence>
                 {!selectedPage && <Text className={styles.searchEmpty}>{payload.labels.noResults || "No settings match your search."}</Text>}
               </div>
             </div>
@@ -777,7 +841,7 @@ export function App() {
         </div>
         <div className={mergeClasses(styles.drawerBackdrop, mobileDrawerOpen && styles.drawerBackdropOpen)} onClick={() => setMobileDrawerOpen(false)} aria-hidden="true" />
         <aside className={mergeClasses(styles.mobileDrawer, "sidebar-polished", mobileDrawerOpen && styles.mobileDrawerOpen)} aria-hidden={!mobileDrawerOpen} aria-label="Settings navigation">
-          <SidebarBody styles={styles} payload={payload} groups={filteredGroups} selectedPage={selectedPage} collapsed={false} query={query} setQuery={setQuery} isOpeningLegacy={isOpeningLegacy} openClassic={() => { setMobileDrawerOpen(false); openClassic(); }} navigate={id => { setSelectedId(id); setMobileDrawerOpen(false); }} results={searchResults} resultIndex={resultIndex} setResultIndex={setResultIndex} onOpenResult={hit => { setMobileDrawerOpen(false); openResult(hit); }} />
+          <SidebarBody styles={styles} payload={payload} groups={filteredGroups} selectedPage={selectedPage} collapsed={false} query={query} setQuery={setQuery} isOpeningLegacy={isOpeningLegacy} openClassic={() => { setMobileDrawerOpen(false); openClassic(); }} navigate={id => { setSelectedId(id); setMobileDrawerOpen(false); }} results={searchResults} resultIndex={resultIndex} setResultIndex={setResultIndex} onOpenResult={hit => { setMobileDrawerOpen(false); openResult(hit); }} instanceId="drawer" />
         </aside>
         </>
         </motion.div>
@@ -801,7 +865,7 @@ export function App() {
 
 const morphEase: [number, number, number, number] = [0.33, 1, 0.68, 1];
 
-function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, setQuery, isOpeningLegacy, openClassic, navigate, onToggleCollapsed, results = [], resultIndex = 0, setResultIndex, onOpenResult }: {
+function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, setQuery, isOpeningLegacy, openClassic, navigate, onToggleCollapsed, results = [], resultIndex = 0, setResultIndex, onOpenResult, instanceId }: {
   styles: ReturnType<typeof useStyles>;
   payload: SettingsPayload;
   groups: { title: string; pages: SettingsPageDescriptor[] }[];
@@ -817,6 +881,8 @@ function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, 
   resultIndex?: number;
   setResultIndex?: (index: number) => void;
   onOpenResult?: (hit: SearchHit) => void;
+  // Distinguishes the rail and the mobile drawer so their pills never share a layoutId.
+  instanceId: string;
 }) {
   const reduceMotion = useReducedMotion();
   const duration = reduceMotion ? 0 : 0.22;
@@ -825,6 +891,54 @@ function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, 
   const labelAnimate = collapsed
     ? { opacity: 0 }
     : { opacity: 1 };
+  const pillTransition = reduceMotion ? { duration: 0 } : { type: "spring" as const, duration: 0.22, bounce: 0 };
+  const dropdownMotion = reduceMotion
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0 } }
+    : { initial: { opacity: 0, y: -4, scale: 0.98 }, animate: { opacity: 1, y: 0, scale: 1 }, exit: { opacity: 0, y: -4, scale: 0.98 }, transition: { duration: 0.14, ease: morphEase } };
+  const navRef = useRef<HTMLElement>(null);
+  const navInnerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [navFadeVisible, setNavFadeVisible] = useState(false);
+  const [focusSearchPending, setFocusSearchPending] = useState(false);
+  const showResults = Boolean(query.trim() && results.length > 0 && onOpenResult);
+
+  // Bottom fade only while there is more nav below the visible area.
+  const updateNavFade = () => {
+    const nav = navRef.current;
+    if (!nav) return;
+    setNavFadeVisible(nav.scrollHeight - nav.scrollTop - nav.clientHeight > 4);
+  };
+  useEffect(() => {
+    const nav = navRef.current;
+    const inner = navInnerRef.current;
+    updateNavFade();
+    if (!nav || !inner || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateNavFade());
+    observer.observe(nav);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the current page visible when it changes (search, restored page).
+  // Scrolls the nav only (not via scrollIntoView, which could also scroll the
+  // overflow-hidden ancestors of the off-canvas mobile drawer).
+  useEffect(() => {
+    const nav = navRef.current;
+    const item = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !item) return;
+    const navRect = nav.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    if (itemRect.top < navRect.top) nav.scrollTop -= navRect.top - itemRect.top + 6;
+    else if (itemRect.bottom > navRect.bottom) nav.scrollTop += itemRect.bottom - navRect.bottom + 6;
+    updateNavFade();
+  }, [selectedPage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rail search button: expand first, focus once the search field is mounted.
+  useEffect(() => {
+    if (!focusSearchPending || collapsed) return;
+    const frame = requestAnimationFrame(() => { searchInputRef.current?.focus(); setFocusSearchPending(false); });
+    return () => cancelAnimationFrame(frame);
+  }, [focusSearchPending, collapsed]);
 
   return (
     <>
@@ -870,12 +984,31 @@ function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, 
         </AnimatePresence>
       </div>
       <AnimatePresence initial={false}>
+        {collapsed && onToggleCollapsed && (
+          <motion.div
+            key="search-rail"
+            initial={{ opacity: 0, maxHeight: 0, marginBottom: 0 }}
+            animate={{ opacity: 1, maxHeight: 32, marginBottom: 8 }}
+            exit={{ opacity: 0, maxHeight: 0, marginBottom: 0 }}
+            transition={morph}
+            style={{ overflow: "hidden", flexShrink: 0 }}
+          >
+            <Button
+              appearance="subtle"
+              className={mergeClasses(styles.navButton, "nav-button-polished", styles.navButtonCollapsed)}
+              icon={<span className={mergeClasses(styles.navIcon, styles.navIconCollapsed)}><SearchIcon size={18} /></span>}
+              aria-label={payload.labels.searchPlaceholder || "Search settings"}
+              title={payload.labels.searchPlaceholder || "Search settings"}
+              onClick={() => { setFocusSearchPending(true); onToggleCollapsed(); }}
+            />
+          </motion.div>
+        )}
         {!collapsed && (
           <motion.div
             key="search"
             className={styles.searchWrap}
             initial={{ opacity: 0, filter: blur(8), maxHeight: 0, marginBottom: 0 }}
-            animate={{ opacity: 1, filter: blur(0), maxHeight: 48, marginBottom: 14 }}
+            animate={{ opacity: 1, filter: blur(0), maxHeight: 40, marginBottom: 8 }}
             exit={{ opacity: 0, filter: blur(8), maxHeight: 0, marginBottom: 0 }}
             transition={morph}
             style={{ overflow: "visible", flexShrink: 0 }}
@@ -883,6 +1016,7 @@ function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, 
             <div className={`${styles.searchBox} search-box`}>
               <SearchIcon size={16} className={`${styles.searchBoxIcon} search-box-icon`} />
               <input
+                ref={searchInputRef}
                 className={`${styles.searchInput} search-input-native`}
                 value={query}
                 onChange={event => setQuery(event.currentTarget.value)}
@@ -906,44 +1040,54 @@ function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, 
                   }
                 }}
               />
-              {query.trim() && results.length > 0 && <kbd className="search-hint-kbd">↵</kbd>}
+              {showResults && <kbd className="search-hint-kbd">↵</kbd>}
             </div>
-            {query.trim() && results.length > 0 && onOpenResult && (
-              <div className={styles.searchResults} role="listbox" aria-label={payload.labels.searchPlaceholder || "Search results"}>
-                {results.map((hit, index) => (
-                  <button
-                    key={hit.key}
-                    type="button"
-                    role="option"
-                    aria-selected={index === resultIndex}
-                    className={mergeClasses(styles.searchResult, index === resultIndex && styles.searchResultActive)}
-                    onMouseEnter={() => setResultIndex?.(index)}
-                    onClick={() => onOpenResult(hit)}
-                  >
-                    <span className={styles.searchResultLabel}><HighlightedLabel text={hit.titleOriginal} query={query} /></span>
-                    <span className={styles.searchResultMeta}>{hit.meta}{hit.anchor ? " ›" : ""}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <AnimatePresence>
+              {showResults && onOpenResult && (
+                <motion.div key="results" className={styles.searchResults} style={{ transformOrigin: "top center" }} role="listbox" aria-label={payload.labels.searchPlaceholder || "Search results"} {...dropdownMotion}>
+                  {results.map((hit, index) => (
+                    <button
+                      key={hit.key}
+                      type="button"
+                      role="option"
+                      aria-selected={index === resultIndex}
+                      className={mergeClasses(styles.searchResult, index === resultIndex && styles.searchResultActive)}
+                      onMouseEnter={() => setResultIndex?.(index)}
+                      onClick={() => onOpenResult(hit)}
+                    >
+                      <span className={styles.searchResultLabel}><HighlightedLabel text={hit.titleOriginal} query={query} /></span>
+                      <span className={styles.searchResultMeta}>{hit.meta}{hit.anchor ? " ›" : ""}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
       <div className={styles.navWrap}>
-        <nav className={styles.nav} aria-label={payload.labels.navigation || "Settings"}>
-          {groups.map(group => <div className={mergeClasses(styles.category, "category-polished")} key={group.title}>
-            <motion.div initial={false} animate={collapsed ? { opacity: 0, filter: blur(6), height: 0, paddingBottom: 0, marginBottom: 0 } : { opacity: 1, filter: blur(0), height: "auto", paddingBottom: 0, marginBottom: 0 }} transition={morph} style={{ overflow: "hidden" }}>
-              <Text className={mergeClasses(styles.categoryTitle, "category-title-polished")} size={200} weight="semibold">{group.title}</Text>
-            </motion.div>
-            {group.pages.map(page => <Button key={page.id} appearance="subtle" className={mergeClasses(styles.navButton, "nav-button-polished", collapsed && styles.navButtonCollapsed, selectedPage?.id === page.id && styles.navButtonSelected, selectedPage?.id === page.id && "nav-button-selected-polished")} icon={pageIcon(page.id, mergeClasses(styles.navIcon, "nav-icon-polished", collapsed && styles.navIconCollapsed))} title={page.title} aria-current={selectedPage?.id === page.id ? "page" : undefined} onClick={() => navigate(page.id)}><motion.span className={mergeClasses(styles.navLabel, collapsed && styles.navLabelCollapsed)} initial={false} animate={labelAnimate} transition={morph}>{page.title}</motion.span></Button>)}
-          </div>)}
-          {!groups.length && <Text className={styles.empty}>{payload.labels.noResults || "No settings match your search."}</Text>}
-        </nav>
-        <div className={styles.navFade} aria-hidden="true" />
+        <motion.nav ref={navRef} layoutScroll className={styles.nav} aria-label={payload.labels.navigation || "Settings"} onScroll={updateNavFade}>
+          <div ref={navInnerRef}>
+            {groups.map(group => <div className={mergeClasses(styles.category, "category-polished")} key={group.title}>
+              <motion.div initial={false} animate={collapsed ? { opacity: 0, filter: blur(6), height: 0, paddingBottom: 0, marginBottom: 0 } : { opacity: 1, filter: blur(0), height: "auto", paddingBottom: 0, marginBottom: 0 }} transition={morph} style={{ overflow: "hidden" }}>
+                <Text className={mergeClasses(styles.categoryTitle, "category-title-polished")} size={200} weight="semibold">{group.title}</Text>
+              </motion.div>
+              {group.pages.map(page => {
+                const selected = selectedPage?.id === page.id;
+                return <div key={page.id} className={styles.navItem}>
+                  {selected && <motion.span layoutId={`nav-pill-${instanceId}`} className={styles.navPill} style={{ borderRadius: 14, boxShadow: "inset 0 0 0 1px rgba(255,255,255,.04)" }} transition={pillTransition} aria-hidden="true" />}
+                  <Button appearance="subtle" className={mergeClasses(styles.navButton, "nav-button-polished", collapsed && styles.navButtonCollapsed, selected && styles.navButtonSelected, selected && "nav-button-selected-polished")} icon={pageIcon(page.id, mergeClasses(styles.navIcon, "nav-icon-polished", collapsed && styles.navIconCollapsed))} title={page.title} aria-current={selected ? "page" : undefined} onClick={() => navigate(page.id)}><motion.span className={mergeClasses(styles.navLabel, collapsed && styles.navLabelCollapsed)} initial={false} animate={labelAnimate} transition={morph}>{page.title}</motion.span></Button>
+                </div>;
+              })}
+            </div>)}
+            {!groups.length && <Text className={styles.empty}>{payload.labels.noResults || "No settings match your search."}</Text>}
+          </div>
+        </motion.nav>
+        <div className={mergeClasses(styles.navFade, navFadeVisible && styles.navFadeVisible)} aria-hidden="true" />
       </div>
-      <div className={styles.sidebarFooter}>
-        <Button className={mergeClasses(styles.classicButton, "classic-button-polished", collapsed && styles.navButtonCollapsed)} appearance="subtle" icon={<AArrowDownIcon size={18} />} disabled={isOpeningLegacy} onClick={openClassic} title={payload.labels.classicSettings || "Classic settings"}><motion.span className={mergeClasses(styles.navLabel, collapsed && styles.navLabelCollapsed)} initial={false} animate={labelAnimate} transition={morph}>{isOpeningLegacy ? <Spinner size="tiny" /> : payload.labels.classicSettings || "Classic settings"}</motion.span></Button>
-        <Button className={mergeClasses(styles.classicButton, "classic-button-polished", collapsed && styles.navButtonCollapsed)} appearance="subtle" icon={<GithubIcon size={18} />} title="GitHub" onClick={() => window.chrome?.webview?.postMessage({ type: "action", action: "github" })}><motion.span className={mergeClasses(styles.navLabel, collapsed && styles.navLabelCollapsed)} initial={false} animate={labelAnimate} transition={morph}>{payload.labels.github || "GitHub"}</motion.span></Button>
+      <div className={mergeClasses(styles.sidebarFooter, collapsed && styles.sidebarFooterCollapsed)}>
+        <Button className={mergeClasses(styles.classicButton, "classic-button-polished", collapsed && styles.navButtonCollapsed)} appearance="subtle" icon={<HistoryIcon size={18} />} disabled={isOpeningLegacy} onClick={openClassic} title={payload.labels.classicSettings || "Classic settings"}><motion.span className={mergeClasses(styles.navLabel, collapsed && styles.navLabelCollapsed)} initial={false} animate={labelAnimate} transition={morph}>{isOpeningLegacy ? <Spinner size="tiny" /> : payload.labels.classicSettings || "Classic settings"}</motion.span></Button>
+        <Button className={mergeClasses(styles.footerIconButton, "classic-button-polished", collapsed && styles.footerIconButtonCollapsed)} appearance="subtle" icon={<GithubIcon size={18} />} title={payload.labels.github || "GitHub"} aria-label={payload.labels.github || "GitHub"} onClick={() => window.chrome?.webview?.postMessage({ type: "action", action: "github" })} />
       </div>
     </>
   );
@@ -951,8 +1095,8 @@ function SidebarBody({ styles, payload, groups, selectedPage, collapsed, query, 
 
 function WindowControls({ labels, styles }: { labels: { minimize: string; close: string }; styles: ReturnType<typeof useStyles> }) {
   const post = (action: "minimize" | "close") => window.chrome?.webview?.postMessage({ type: "windowAction", action });
-  return <div className={styles.windowControls} aria-label={`${labels.minimize}, ${labels.close}`}>
-    <Button appearance="subtle" className={`${styles.windowButton} window-button-polished`} icon={<Subtract16Regular />} aria-label={labels.minimize} title={labels.minimize} onClick={() => post("minimize")} />
+  return <div className={mergeClasses(styles.windowControls, "window-controls-polished")} aria-label={`${labels.minimize}, ${labels.close}`}>
+    <Button appearance="subtle" className={mergeClasses(styles.windowButton, "window-button-polished")} icon={<Subtract16Regular />} aria-label={labels.minimize} title={labels.minimize} onClick={() => post("minimize")} />
     <Button appearance="subtle" className={mergeClasses(styles.windowButton, styles.closeButton, "window-button-polished", "close-button-polished")} icon={<Dismiss16Regular />} aria-label={labels.close} title={labels.close} onClick={() => post("close")} />
   </div>;
 }

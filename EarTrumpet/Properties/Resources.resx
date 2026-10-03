@@ -2106,4 +2106,142 @@ Details: {0}</value>
   <data name="FocusLostAppMenuDisableText" xml:space="preserve">
     <value>Exclude this app when focus is lost</value>
   </data>
+  <data name="WebSettingsPresetName" xml:space="preserve">
+    <value>Preset name</value>
+  </data>
+  <data name="WebSettingsThemeName" xml:space="preserve">
+    <value>Theme name</value>
+  </data>
+  <data name="WebSettingsAppearanceDesc" xml:space="preserve">
+    <value>Pick a coordinated palette, then fine-tune it below.</value>
+  </data>
+  <data name="WebSettingsDiagnostics" xml:space="preserve">
+    <value>Diagnostics</value>
+  </data>
+  <data name="WebSettingsExportDiagnostics" xml:space="preserve">
+    <value>Export diagnostics</value>
+  </data>
+  <data name="WebSettingsDiagnosticsDesc" xml:space="preserve">
+    <value>Create a support bundle (logs and app state) to attach to a bug report. Nothing is sent automatically.</value>
+  </data>
+  <data name="WebSettingsRestoreAllDevices" xml:space="preserve">
+    <value>Restore all devices</value>
+  </data>
+  <data name="WebSettingsShowDeviceSwitchNotification" xml:space="preserve">
+    <value>Show a notification when switching devices</value>
+  </data>
+  <data name="WebSettingsShowDeviceSwitchNotificationDesc" xml:space="preserve">
+    <value>Display a toast when a device shortcut switches the default device.</value>
+  </data>
+  <data name="WebSettingsPeakStyleClassic" xml:space="preserve">
+    <value>Classic</value>
+  </data>
+  <data name="WebSettingsPeakStyleDotted" xml:space="preserve">
+    <value>Dotted</value>
+  </data>
+  <data name="WebSettingsPeakStyleBlocks" xml:space="preserve">
+    <value>Blocks</value>
+  </data>
+  <data name="WebSettingsPeakStyleBars" xml:space="preserve">
+    <value>Bars</value>
+  </data>
+  <data name="WebSettingsPeakStyleWave" xml:space="preserve">
+    <value>Wave</value>
+  </data>
+  <data name="WebSettingsSecondsShort" xml:space="preserve">
+    <value>s</value>
+  </data>
+  <data name="WebSettingsHealthMemory" xml:space="preserve">
+    <value>Memory</value>
+  </data>
+  <data name="WebSettingsHealthPeak" xml:space="preserve">
+    <value>peak</value>
+  </data>
+  <data name="WebSettingsHealthUser" xml:space="preserve">
+    <value>User</value>
+  </data>
+  <data name="WebSettingsHealthThreads" xml:space="preserve">
+    <value>Threads</value>
+  </data>
+  <data name="WebSettingsHealthUptime" xml:space="preserve">
+    <value>Uptime</value>
+  </data>
+  <data name="WebSettingsHealthUnavailable" xml:space="preserve">
+    <value>Health data unavailable</value>
+  </data>
+  <data name="WebSettingsShortcutsGlobal" xml:space="preserve">
+    <value>Global shortcuts</value>
+  </data>
+  <data name="WebSettingsUpdatesSection" xml:space="preserve">
+    <value>Update checks</value>
+  </data>
+  <data name="WebSettingsMediaPopupSection" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="WebSettingsPrivacySection" xml:space="preserve">
+    <value>Telemetry and announcements</value>
+  </data>
+  <data name="WebSettingsPrivacySectionDesc" xml:space="preserve">
+    <value>What BetterTrumpet may send, and what it may show you.</value>
+  </data>
+  <data name="WebSettingsPrivacyPageSubtitle" xml:space="preserve">
+    <value>Telemetry, announcements and settings backup.</value>
+  </data>
+  <data name="WebSettingsHotkeyFlyoutDesc" xml:space="preserve">
+    <value>Show the volume flyout from anywhere.</value>
+  </data>
+  <data name="WebSettingsHotkeyMixerDesc" xml:space="preserve">
+    <value>Open the full volume mixer.</value>
+  </data>
+  <data name="WebSettingsHotkeySettingsDesc" xml:space="preserve">
+    <value>Open this settings window.</value>
+  </data>
+  <data name="WebSettingsHotkeyVolumeUpDesc" xml:space="preserve">
+    <value>Raise the volume of every playback device.</value>
+  </data>
+  <data name="WebSettingsHotkeyVolumeDownDesc" xml:space="preserve">
+    <value>Lower the volume of every playback device.</value>
+  </data>
+  <data name="WebSettingsHotkeySwitchDeviceDesc" xml:space="preserve">
+    <value>Cycle to the next playback device.</value>
+  </data>
+  <data name="WebSettingsCustomTheme" xml:space="preserve">
+    <value>Custom</value>
+  </data>
+  <data name="WebSettingsConfirmDelete" xml:space="preserve">
+    <value>Confirm?</value>
+  </data>
+  <data name="WebSettingsConfirmClearAll" xml:space="preserve">
+    <value>Clear all rules?</value>
+  </data>
+  <data name="WebSettingsCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="WebSettingsSaved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="WebSettingsApplied" xml:space="preserve">
+    <value>Applied</value>
+  </data>
+  <data name="WebSettingsHexColor" xml:space="preserve">
+    <value>Hex color</value>
+  </data>
+  <data name="WebSettingsPreview" xml:space="preserve">
+    <value>Preview</value>
+  </data>
+  <data name="WebSettingsAppHealth" xml:space="preserve">
+    <value>App health</value>
+  </data>
+  <data name="WebSettingsSearchShortcut" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="WebSettingsDisabledByEco" xml:space="preserve">
+    <value>Overridden by eco mode</value>
+  </data>
+  <data name="WebSettingsRequiresSmoothAnimation" xml:space="preserve">
+    <value>Requires smooth volume animation</value>
+  </data>
+  <data name="WebSettingsRequiresAutoCheck" xml:space="preserve">
+    <value>Requires automatic checks</value>
+  </data>
 </root>

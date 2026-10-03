@@ -74,6 +74,15 @@ select {
   font: inherit;
 }
 
+/* Fluent <Text as="h1|h2|h3"> keeps the UA heading margins otherwise, which
+   made section headers look hollow and bottom-heavy. Spacing is owned by the
+   Griffel classes (pageTitle, sectionHeader...). */
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
 button {
   cursor: pointer;
 }
@@ -100,11 +109,18 @@ select option:hover {
 
 /* Enhanced focus rings for accessibility */
 button:focus-visible,
-input:focus-visible,
+input:not(.search-input-native):focus-visible,
 select:focus-visible {
   outline: 2px solid #9b7bea;
   outline-offset: 2px;
   box-shadow: 0 0 0 4px rgba(155, 123, 234, 0.15);
+}
+
+/* The search field draws its focus on the surrounding .search-box halo. */
+.search-input-native:focus,
+.search-input-native:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 * {

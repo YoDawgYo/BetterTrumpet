@@ -3481,5 +3481,143 @@ namespace EarTrumpet.Properties {
         public static string FocusLostAppMenuDisableText {
             get { return ResourceManager.GetString("FocusLostAppMenuDisableText", resourceCulture); }
         }
+        public static string WebSettingsPresetName {
+            get { return ResourceManager.GetString("WebSettingsPresetName", resourceCulture); }
+        }
+        public static string WebSettingsThemeName {
+            get { return ResourceManager.GetString("WebSettingsThemeName", resourceCulture); }
+        }
+        public static string WebSettingsAppearanceDesc {
+            get { return ResourceManager.GetString("WebSettingsAppearanceDesc", resourceCulture); }
+        }
+        public static string WebSettingsDiagnostics {
+            get { return ResourceManager.GetString("WebSettingsDiagnostics", resourceCulture); }
+        }
+        public static string WebSettingsExportDiagnostics {
+            get { return ResourceManager.GetString("WebSettingsExportDiagnostics", resourceCulture); }
+        }
+        public static string WebSettingsDiagnosticsDesc {
+            get { return ResourceManager.GetString("WebSettingsDiagnosticsDesc", resourceCulture); }
+        }
+        public static string WebSettingsRestoreAllDevices {
+            get { return ResourceManager.GetString("WebSettingsRestoreAllDevices", resourceCulture); }
+        }
+        public static string WebSettingsShowDeviceSwitchNotification {
+            get { return ResourceManager.GetString("WebSettingsShowDeviceSwitchNotification", resourceCulture); }
+        }
+        public static string WebSettingsShowDeviceSwitchNotificationDesc {
+            get { return ResourceManager.GetString("WebSettingsShowDeviceSwitchNotificationDesc", resourceCulture); }
+        }
+        public static string WebSettingsPeakStyleClassic {
+            get { return ResourceManager.GetString("WebSettingsPeakStyleClassic", resourceCulture); }
+        }
+        public static string WebSettingsPeakStyleDotted {
+            get { return ResourceManager.GetString("WebSettingsPeakStyleDotted", resourceCulture); }
+        }
+        public static string WebSettingsPeakStyleBlocks {
+            get { return ResourceManager.GetString("WebSettingsPeakStyleBlocks", resourceCulture); }
+        }
+        public static string WebSettingsPeakStyleBars {
+            get { return ResourceManager.GetString("WebSettingsPeakStyleBars", resourceCulture); }
+        }
+        public static string WebSettingsPeakStyleWave {
+            get { return ResourceManager.GetString("WebSettingsPeakStyleWave", resourceCulture); }
+        }
+        public static string WebSettingsSecondsShort {
+            get { return ResourceManager.GetString("WebSettingsSecondsShort", resourceCulture); }
+        }
+        public static string WebSettingsHealthMemory {
+            get { return ResourceManager.GetString("WebSettingsHealthMemory", resourceCulture); }
+        }
+        public static string WebSettingsHealthPeak {
+            get { return ResourceManager.GetString("WebSettingsHealthPeak", resourceCulture); }
+        }
+        public static string WebSettingsHealthUser {
+            get { return ResourceManager.GetString("WebSettingsHealthUser", resourceCulture); }
+        }
+        public static string WebSettingsHealthThreads {
+            get { return ResourceManager.GetString("WebSettingsHealthThreads", resourceCulture); }
+        }
+        public static string WebSettingsHealthUptime {
+            get { return ResourceManager.GetString("WebSettingsHealthUptime", resourceCulture); }
+        }
+        public static string WebSettingsHealthUnavailable {
+            get { return ResourceManager.GetString("WebSettingsHealthUnavailable", resourceCulture); }
+        }
+        public static string WebSettingsShortcutsGlobal {
+            get { return ResourceManager.GetString("WebSettingsShortcutsGlobal", resourceCulture); }
+        }
+        public static string WebSettingsUpdatesSection {
+            get { return ResourceManager.GetString("WebSettingsUpdatesSection", resourceCulture); }
+        }
+        public static string WebSettingsMediaPopupSection {
+            get { return ResourceManager.GetString("WebSettingsMediaPopupSection", resourceCulture); }
+        }
+        public static string WebSettingsPrivacySection {
+            get { return ResourceManager.GetString("WebSettingsPrivacySection", resourceCulture); }
+        }
+        public static string WebSettingsPrivacySectionDesc {
+            get { return ResourceManager.GetString("WebSettingsPrivacySectionDesc", resourceCulture); }
+        }
+        public static string WebSettingsPrivacyPageSubtitle {
+            get { return ResourceManager.GetString("WebSettingsPrivacyPageSubtitle", resourceCulture); }
+        }
+        public static string WebSettingsHotkeyFlyoutDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeyFlyoutDesc", resourceCulture); }
+        }
+        public static string WebSettingsHotkeyMixerDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeyMixerDesc", resourceCulture); }
+        }
+        public static string WebSettingsHotkeySettingsDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeySettingsDesc", resourceCulture); }
+        }
+        public static string WebSettingsHotkeyVolumeUpDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeyVolumeUpDesc", resourceCulture); }
+        }
+        public static string WebSettingsHotkeyVolumeDownDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeyVolumeDownDesc", resourceCulture); }
+        }
+        public static string WebSettingsHotkeySwitchDeviceDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeySwitchDeviceDesc", resourceCulture); }
+        }
+        public static string WebSettingsCustomTheme {
+            get { return ResourceManager.GetString("WebSettingsCustomTheme", resourceCulture); }
+        }
+        public static string WebSettingsConfirmDelete {
+            get { return ResourceManager.GetString("WebSettingsConfirmDelete", resourceCulture); }
+        }
+        public static string WebSettingsConfirmClearAll {
+            get { return ResourceManager.GetString("WebSettingsConfirmClearAll", resourceCulture); }
+        }
+        public static string WebSettingsCancel {
+            get { return ResourceManager.GetString("WebSettingsCancel", resourceCulture); }
+        }
+        public static string WebSettingsSaved {
+            get { return ResourceManager.GetString("WebSettingsSaved", resourceCulture); }
+        }
+        public static string WebSettingsApplied {
+            get { return ResourceManager.GetString("WebSettingsApplied", resourceCulture); }
+        }
+        public static string WebSettingsHexColor {
+            get { return ResourceManager.GetString("WebSettingsHexColor", resourceCulture); }
+        }
+        public static string WebSettingsPreview {
+            get { return ResourceManager.GetString("WebSettingsPreview", resourceCulture); }
+        }
+        public static string WebSettingsAppHealth {
+            get { return ResourceManager.GetString("WebSettingsAppHealth", resourceCulture); }
+        }
+        public static string WebSettingsSearchShortcut {
+            get { return ResourceManager.GetString("WebSettingsSearchShortcut", resourceCulture); }
+        }
+        public static string WebSettingsDisabledByEco {
+            get { return ResourceManager.GetString("WebSettingsDisabledByEco", resourceCulture); }
+        }
+        public static string WebSettingsRequiresSmoothAnimation {
+            get { return ResourceManager.GetString("WebSettingsRequiresSmoothAnimation", resourceCulture); }
+        }
+        public static string WebSettingsRequiresAutoCheck {
+            get { return ResourceManager.GetString("WebSettingsRequiresAutoCheck", resourceCulture); }
+        }
     }
 }

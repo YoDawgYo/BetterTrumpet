@@ -642,9 +642,18 @@ namespace EarTrumpet
             {
                 var hWndTray = WindowsTaskbar.GetTrayToolbarWindowHwnd();
                 var hWndTooltip = User32.SendMessage(hWndTray, User32.TB_GETTOOLTIPS, IntPtr.Zero, IntPtr.Zero);
-                User32.SendMessage(hWndTooltip, User32.TTM_POPUP, IntPtr.Zero, IntPtr.Zero);
-                
+
+                // The tooltip shows szTip captured when it pops. Dismiss it before changing
+                // volume, then re-show after the icon text updates so a reversed scroll
+                // direction cannot display the stale (pre-change) volume.
+                User32.SendMessage(hWndTooltip, User32.TTM_POP, IntPtr.Zero, IntPtr.Zero);
+                User32.SendMessage(hWndTooltip, User32.TTM_ACTIVATE, (IntPtr)0, IntPtr.Zero);
+
                 CollectionViewModel.Default?.IncrementVolume(Math.Sign(wheelDelta) * 2);
+
+                _trayIcon?.SetTooltip(CollectionViewModel.GetTrayToolTip());
+                User32.SendMessage(hWndTooltip, User32.TTM_ACTIVATE, (IntPtr)1, IntPtr.Zero);
+                User32.SendMessage(hWndTooltip, User32.TTM_POPUP, IntPtr.Zero, IntPtr.Zero);
             }
         }
 

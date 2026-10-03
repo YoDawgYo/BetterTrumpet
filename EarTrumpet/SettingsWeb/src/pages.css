@@ -1,0 +1,461 @@
+/* Page-content styles for SettingsPages.tsx (Sage Glass DA).
+   Griffel injects its atomic classes at runtime after this stylesheet, so any
+   rule that overrides a `styles.*` / Fluent property doubles its class to win
+   on specificity instead of relying on source order. */
+
+/* --- Row structure --------------------------------------------------- */
+
+.bt-row-separated.bt-row-separated {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+@media (max-width: 680px) {
+  .bt-row-separated.bt-row-separated {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+
+.bt-row-end.bt-row-end {
+  justify-content: flex-end;
+}
+
+.bt-row-between.bt-row-between {
+  justify-content: space-between;
+}
+
+.bt-reveal-rows,
+.bt-acc-list-separated {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.bt-empty.bt-empty {
+  display: block;
+}
+
+.bt-save-bar > :first-child {
+  min-width: 180px;
+}
+
+/* Options under the preset save bar: same group, no divider. */
+.bt-save-options.bt-save-options {
+  justify-content: space-between;
+  border-top: none;
+  padding-top: 0;
+}
+
+/* Dependent controls: dimmed, described by the row copy. */
+.bt-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --- Button content (icon + label swaps) ------------------------------ */
+
+.bt-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.bt-btn-content.bt-gapless {
+  gap: 0;
+}
+
+.bt-swap {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.bt-swap-text {
+  display: inline-block;
+  padding-left: 6px;
+}
+
+/* --- Inline two-step destructive buttons ------------------------------- */
+
+.bt-danger.bt-danger {
+  min-width: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+  color: rgba(244, 247, 245, 0.72);
+  border: 1px solid transparent;
+  transition: background-color 160ms cubic-bezier(.2, 0, 0, 1), border-color 160ms cubic-bezier(.2, 0, 0, 1), color 160ms cubic-bezier(.2, 0, 0, 1), padding 140ms cubic-bezier(.33, 1, .68, 1);
+}
+
+.bt-danger.bt-danger-icon {
+  padding-left: 7px;
+  padding-right: 7px;
+}
+
+/* Quiet red only while pointing at a destructive control. */
+.bt-danger.bt-danger:hover {
+  color: #ffb9ae;
+}
+
+.bt-danger.bt-danger-armed,
+.bt-danger.bt-danger-armed:hover,
+.bt-danger.bt-danger-armed:hover:active {
+  color: #ffd0c8;
+  background-color: rgba(150, 34, 26, 0.42);
+  border-color: rgba(240, 120, 104, 0.42);
+}
+
+.bt-danger.bt-danger:focus-visible {
+  outline: 2px solid #9b7bea;
+  outline-offset: 1px;
+}
+
+.bt-theme-delete.bt-danger-icon {
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+.bt-acc-danger-slot.bt-acc-danger-slot {
+  margin-right: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- Hotkeys ----------------------------------------------------------- */
+
+.bt-hotkey-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bt-hotkey.bt-hotkey {
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Unassigned: a dashed, empty keycap slot instead of a repeated "Record" label. */
+.bt-hotkey.bt-hotkey-empty {
+  min-width: 64px;
+  color: rgba(244, 247, 245, 0.46);
+  background-color: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  transition: color 140ms cubic-bezier(.2, 0, 0, 1), border-color 140ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.bt-hotkey.bt-hotkey-empty:hover,
+.bt-hotkey.bt-hotkey-empty:focus-visible {
+  color: #b196f1;
+  background-color: transparent;
+  border-color: rgba(155, 123, 234, 0.6);
+}
+
+.bt-hotkey.bt-hotkey-recording {
+  padding-left: 12px;
+  padding-right: 12px;
+  box-shadow: 0 0 0 3px rgba(155, 123, 234, 0.22);
+  animation: bt-recording-pulse 1.4s ease-in-out infinite;
+}
+
+.bt-hotkey-recording-text {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+@keyframes bt-recording-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(155, 123, 234, 0.22); }
+  50% { box-shadow: 0 0 0 5px rgba(155, 123, 234, 0.10); }
+}
+
+.bt-hotkey-clear.bt-hotkey-clear {
+  min-width: 0;
+  color: rgba(244, 247, 245, 0.5);
+}
+
+/* --- QuickTrumpet empty state ------------------------------------------ */
+
+.bt-empty-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 4px;
+}
+
+.bt-empty-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  color: #b196f1;
+  background: rgba(155, 123, 234, 0.12);
+  border: 1px solid rgba(155, 123, 234, 0.22);
+  border-radius: 14px;
+}
+
+.bt-empty-text.bt-empty-text {
+  color: rgba(244, 247, 245, 0.62);
+  line-height: 1.5;
+}
+
+/* --- Appearance: presets ----------------------------------------------- */
+
+/* popLayout pops exiting chips out of flow; they position against this. */
+.bt-theme-flow {
+  position: relative;
+}
+
+.bt-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.bt-theme-custom.bt-theme-custom,
+.bt-theme-custom.bt-theme-custom:hover {
+  cursor: default;
+  background-color: rgba(155, 123, 234, 0.16);
+}
+
+.bt-swatch-live {
+  transition: background-color 200ms cubic-bezier(.2, 0, 0, 1);
+}
+
+/* --- Appearance: colour rows ------------------------------------------- */
+
+.bt-color-controls.bt-color-controls {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.bt-hex-input {
+  box-sizing: border-box;
+  width: 92px;
+  height: 32px;
+  padding: 0 10px;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #dfe3e7;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  outline: none;
+  user-select: text;
+  transition: border-color 160ms cubic-bezier(.2, 0, 0, 1), box-shadow 160ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.bt-hex-input:focus {
+  border-color: #9b7bea;
+  box-shadow: 0 0 0 3px rgba(155, 123, 234, 0.18);
+}
+
+.bt-hex-input.bt-hex-invalid {
+  border-color: rgba(240, 120, 104, 0.6);
+  box-shadow: 0 0 0 3px rgba(150, 34, 26, 0.22);
+}
+
+.bt-tool-row.bt-tool-row {
+  gap: 4px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.bt-tool-spacer {
+  flex: 1 1 auto;
+}
+
+/* --- Appearance: live flyout preview ----------------------------------- */
+
+.bt-preview {
+  display: grid;
+  gap: 10px;
+  padding: 16px 24px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.bt-preview-label,
+.bt-health-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(244, 247, 245, 0.5);
+}
+
+/* A stand-in "desktop" so the window opacity is actually visible. */
+.bt-preview-stage {
+  display: grid;
+  place-items: center;
+  padding: 22px 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 18% 28%, rgba(155, 123, 234, 0.42), transparent 52%),
+    radial-gradient(circle at 82% 74%, rgba(86, 104, 220, 0.34), transparent 50%),
+    linear-gradient(135deg, #221d4a, #0f1030);
+}
+
+.bt-preview-flyout {
+  box-sizing: border-box;
+  display: grid;
+  gap: 12px;
+  width: min(320px, 100%);
+  padding: 14px 16px;
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  transition: background-color 200ms cubic-bezier(.2, 0, 0, 1), color 200ms cubic-bezier(.2, 0, 0, 1), box-shadow 200ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.bt-preview-device {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.92;
+}
+
+.bt-preview-name {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bt-preview-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+}
+
+.bt-preview-app {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.bt-preview-slider {
+  position: relative;
+  display: block;
+  height: 16px;
+}
+
+.bt-preview-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 4px;
+  margin-top: -2px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.bt-preview-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+
+.bt-preview-peak {
+  position: absolute;
+  left: 0;
+  top: calc(50% + 4px);
+  height: 2px;
+  border-radius: 999px;
+  opacity: 0.9;
+}
+
+.bt-preview-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.bt-preview-track,
+.bt-preview-fill,
+.bt-preview-peak,
+.bt-preview-thumb,
+.bt-preview-app {
+  transition: background-color 200ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.bt-preview-value {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  opacity: 0.85;
+}
+
+/* --- About: health readout --------------------------------------------- */
+
+.bt-health {
+  display: grid;
+  gap: 10px;
+  padding: 16px 24px;
+}
+
+.bt-health-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bt-health-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px 5px;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+}
+
+.bt-health-key {
+  color: rgba(244, 247, 245, 0.52);
+}
+
+.bt-health-value {
+  color: #e6e9ec;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bt-danger.bt-danger,
+  .bt-hotkey.bt-hotkey-empty,
+  .bt-hex-input,
+  .bt-swatch-live,
+  .bt-preview-flyout,
+  .bt-preview-track,
+  .bt-preview-fill,
+  .bt-preview-peak,
+  .bt-preview-thumb,
+  .bt-preview-app {
+    transition: none;
+  }
+
+  .bt-hotkey.bt-hotkey-recording {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bt-preview-flyout {
+    backdrop-filter: none;
+  }
+}

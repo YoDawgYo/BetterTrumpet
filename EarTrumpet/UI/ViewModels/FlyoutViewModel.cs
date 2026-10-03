@@ -160,6 +160,14 @@ private readonly Action _returnFocusToTray;
         {
             if (IsExpanded || Devices.Count == 0)
             {
+                // Collapsed mode shows exactly one device: always prefer the default so a
+                // transient device arrival (e.g. a headset coming online) cannot become the
+                // stuck collapsed header instead of the actual default device.
+                if (!IsExpanded && _mainViewModel.Default != null && device != _mainViewModel.Default)
+                {
+                    return;
+                }
+
                 device.Apps.CollectionChanged += Apps_CollectionChanged;
                 Devices.Insert(0, device);
             }
@@ -389,6 +397,15 @@ private readonly Action _returnFocusToTray;
                         device.Apps.CollectionChanged -= Apps_CollectionChanged;
                         Devices.Remove(device);
                     }
+                }
+
+                // The default device may be missing from Devices (e.g. it was hidden or a
+                // non-default device was shown while collapsed). Restore it so collapsing
+                // always lands on the actual default device.
+                if (_mainViewModel.Default != null && !Devices.Contains(_mainViewModel.Default))
+                {
+                    _mainViewModel.Default.Apps.CollectionChanged += Apps_CollectionChanged;
+                    Devices.Insert(0, _mainViewModel.Default);
                 }
             }
 

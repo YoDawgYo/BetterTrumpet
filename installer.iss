@@ -40,8 +40,10 @@ Name: "addtopath"; Description: "{cm:AddToPathTask}"; GroupDescription: "{cm:Opt
 [CustomMessages]
 english.StartupTask=Launch BetterTrumpet at Windows startup
 french.StartupTask=Lancer BetterTrumpet au demarrage de Windows
-english.AddToPathTask=Add to PATH (enables "bt" command in terminal for CLI)
-french.AddToPathTask=Ajouter au PATH (active la commande "bt" dans le terminal pour le CLI)
+english.AddToPathTask=Add to PATH (lets you run the "bt" volume command in any terminal - see docs/CLI.md on GitHub)
+french.AddToPathTask=Ajouter au PATH (permet d'utiliser la commande de volume "bt" dans n'importe quel terminal - voir docs/CLI.md sur GitHub)
+english.AddToPathAlready=BetterTrumpet folder is already in PATH
+french.AddToPathAlready=Le dossier BetterTrumpet est deja dans le PATH
 english.OptionsGroup=Options:
 french.OptionsGroup=Options :
 english.LaunchAfterInstall=Launch BetterTrumpet
@@ -129,6 +131,39 @@ begin
   end;
   // Look for the path with leading and trailing semicolons
   Result := Pos(';' + Uppercase(Param) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
+end;
+
+// Reflect the current PATH state on the "Add to PATH" task checkbox:
+// already in PATH -> unchecked and disabled so the user is not left wondering.
+procedure CurPageChanged(CurPageID: Integer);
+var
+  I: Integer;
+  TaskCaption: string;
+  ItemCaption: string;
+begin
+  if CurPageID = wpSelectTasks then
+  begin
+    if not NeedsAddPath(ExpandConstant('{app}')) then
+    begin
+      TaskCaption := CustomMessage('AddToPathTask');
+      I := 0;
+      while True do
+      begin
+        try
+          ItemCaption := WizardForm.TasksList.ItemCaption[I];
+        except
+          break;
+        end;
+        if Pos(TaskCaption, ItemCaption) > 0 then
+        begin
+          WizardForm.TasksList.CheckItem(I, coUncheck);
+          WizardForm.TasksList.ItemEnabled[I] := False;
+          break;
+        end;
+        I := I + 1;
+      end;
+    end;
+  end;
 end;
 
 // Remove from PATH + clean BetterTrumpet registry on uninstall

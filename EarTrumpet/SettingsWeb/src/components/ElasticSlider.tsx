@@ -1,5 +1,5 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 import "./ElasticSlider.css";
 
@@ -17,6 +17,9 @@ interface ElasticSliderProps {
   rightIcon?: ReactNode;
   ariaLabel: string;
   suffix?: string;
+  /** BCP 47 locale for the value readout; defaults to the document/browser language. */
+  locale?: string;
+  disabled?: boolean;
   onChange?: (value: number) => void;
   onCommit?: (value: number) => void;
 }
@@ -33,6 +36,8 @@ export default function ElasticSlider({
   rightIcon = <span aria-hidden="true">+</span>,
   ariaLabel,
   suffix = "",
+  locale,
+  disabled = false,
   onChange,
   onCommit,
 }: ElasticSliderProps) {
@@ -78,6 +83,16 @@ export default function ElasticSlider({
       : next;
     return Number(Math.min(Math.max(stepped, startingValue), maxValue).toFixed(precision));
   };
+
+  const formatter = useMemo(() => {
+    const resolved = locale || document.documentElement.lang || navigator.language || undefined;
+    try { return new Intl.NumberFormat(resolved, { maximumFractionDigits: precision, useGrouping: false }); }
+    catch { return new Intl.NumberFormat(undefined, { maximumFractionDigits: precision, useGrouping: false }); }
+  }, [locale, precision]);
+  const format = (next: number) => `${formatter.format(next)}${suffix}`;
+  // Reserve the widest possible readout so the track never shifts while dragging.
+  const sampleFraction = precision > 0 ? Number((startingValue + stepSize * 0.5 + 10 ** -precision).toFixed(precision)) : startingValue;
+  const outputWidth = Math.max(format(startingValue).length, format(maxValue).length, format(sampleFraction).length);
 
   const update = (next: number) => {
     const normalized = normalize(next);
@@ -127,6 +142,7 @@ export default function ElasticSlider({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (disabled) return;
     const delta = isStepped ? stepSize : (maxValue - startingValue) / 100;
     let next: number | undefined;
     if (event.key === "ArrowLeft" || event.key === "ArrowDown") next = valueRef.current - delta;
@@ -142,10 +158,10 @@ export default function ElasticSlider({
   const percentage = maxValue === startingValue ? 0 : ((draft - startingValue) / (maxValue - startingValue)) * 100;
 
   return (
-    <div className={`elastic-slider ${className}`.trim()}>
+    <div className={`elastic-slider ${disabled ? "elastic-slider--disabled" : ""} ${className}`.trim()} aria-disabled={disabled || undefined}>
       <motion.div
         className="elastic-slider__control"
-        onHoverStart={() => reducedMotion ? scale.jump(1) : animate(scale, 1.12, { duration: 0.16, ease: "easeOut" })}
+        onHoverStart={() => reducedMotion || disabled ? scale.jump(1) : animate(scale, 1.12, { duration: 0.16, ease: "easeOut" })}
         onHoverEnd={() => reducedMotion ? scale.jump(1) : animate(scale, 1, { duration: 0.18, ease: "easeOut" })}
         style={{ opacity: iconOpacity }}
       >
@@ -156,15 +172,16 @@ export default function ElasticSlider({
           ref={sliderRef}
           className="elastic-slider__root"
           role="slider"
-          tabIndex={0}
+          tabIndex={disabled ? -1 : 0}
           aria-label={ariaLabel}
+          aria-disabled={disabled || undefined}
           aria-valuemin={startingValue}
           aria-valuemax={maxValue}
           aria-valuenow={draft}
-          aria-valuetext={`${draft}${suffix}`}
+          aria-valuetext={format(draft)}
           onKeyDown={handleKeyDown}
           onPointerDown={event => {
-            if (event.button !== 0) return;
+            if (disabled || event.button !== 0) return;
             updateFromPointer(event);
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -189,7 +206,7 @@ export default function ElasticSlider({
           {rightIcon}
         </motion.span>
       </motion.div>
-      <output className="elastic-slider__value" aria-hidden="true">{draft}{suffix}</output>
+      <output className="elastic-slider__value" aria-hidden="true" style={{ minWidth: `${outputWidth}ch` }}>{format(draft)}</output>
     </div>
   );
 }

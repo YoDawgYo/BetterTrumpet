@@ -15,17 +15,27 @@
  *                   answers = { questionId: optionKey } for polls/surveys/A-B
  *                   answers = { text: "..." } for free-text items (feature requests…)
  *   GET  /results — live counts {updatedAt, results} + free-text answers {texts}
+ *   GET  /feed    — the what's-new feed (stored via PUT /feed)
+ *   PUT  /feed    — guarded by x-feed-key
  *   GET  /health  — ok
  *
- * Credibility rules enforced here:
- *   - one vote per (announcementId, voterId) — duplicates are ignored (200)
- *   - rate limit per IP (60 votes / 10 min)
- *   - counts are only ever incremented; free text is stored as-is (capped)
+ * KV budget notes (free tier: 1000 list/day, 100k read/day, 1k write/day… but
+ * writes here are low-traffic):
+ *   - NO list() anywhere. Announcement ids are tracked in a `manifest` key
+ *     (array of ids), so /results does 1 manifest read + 1 read per known id —
+ *     all cheap reads instead of quota-killing lists.
+ *   - /results responses are cached in KV for 5 minutes (cache:results), so the
+ *     per-install startup checks collapse into ~288 reads/day max.
+ *   - /vote checks the dedupe key FIRST; a duplicate costs one read and zero
+ *     writes.
  */
 
 const RATE_LIMIT_WINDOW = 10 * 60;   // seconds
 const RATE_LIMIT_MAX = 60;           // votes per IP per window
 const TEXT_CAP = 300;                // keep the latest N free-text answers
+const RESULTS_CACHE_TTL = 5 * 60;    // seconds — /results snapshot lifetime
+const MANIFEST_KEY = "manifest";
+const CACHE_KEY = "cache:results";
 
 async function prepare(env) {
   if (typeof env.VOTES !== "object" || !env.VOTES.get) {
@@ -33,7 +43,23 @@ async function prepare(env) {
   }
 }
 
-/** Normalize a question map to { optionKey: count }. */
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+/** Register announcement ids touched by a vote so /results knows what to read. */
+async function ensureInManifest(env, announcementId) {
+  const manifest = (await env.VOTES.get(MANIFEST_KEY, "json")) || [];
+  if (!manifest.includes(announcementId)) {
+    manifest.push(announcementId);
+    await env.VOTES.put(MANIFEST_KEY, JSON.stringify(manifest));
+  }
+}
+
+/** Normalize a question map to { questionId: { optionKey: count } }. */
 function tallyByQuestion(answers, existing) {
   const out = existing ? { ...existing } : {};
   for (const [questionId, optionKey] of Object.entries(answers || {})) {
@@ -44,19 +70,12 @@ function tallyByQuestion(answers, existing) {
   return out;
 }
 
-/** Atomic read-modify-write for option counts (retries on concurrent writes). */
+/** Read-modify-write for option counts. */
 async function mergeCounts(env, announcementId, answers) {
   const key = `counts:${announcementId}`;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const existing = await env.VOTES.get(key, "json");
-    const next = tallyByQuestion(answers, existing);
-    try {
-      await env.VOTES.put(key, JSON.stringify(next));
-      return;
-    } catch {
-      // retry on concurrent write
-    }
-  }
+  const existing = await env.VOTES.get(key, "json");
+  const next = tallyByQuestion(answers, existing);
+  await env.VOTES.put(key, JSON.stringify(next));
 }
 
 /** Append one free-text answer, keeping the latest TEXT_CAP entries. */
@@ -67,14 +86,6 @@ async function appendText(env, announcementId, entry) {
   if (list.length > TEXT_CAP) list = list.slice(list.length - TEXT_CAP);
   await env.VOTES.put(key, JSON.stringify(list));
 }
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
-  });
-}
-
 
 async function handleGetFeed(env) {
   await prepare(env);
@@ -93,6 +104,15 @@ async function handlePutFeed(request, env) {
   try { body = await request.json(); } catch { return json({ error: "invalid json" }, 400); }
   if (!body || !Array.isArray(body.announcements)) return json({ error: "announcements array required" }, 400);
   await env.VOTES.put("feed:json", JSON.stringify(body));
+  // The feed defines the canonical id set — keep the manifest in sync and
+  // invalidate the results cache so new ids show up immediately.
+  const ids = body.announcements.map((a) => a.id).filter(Boolean);
+  const manifest = (await env.VOTES.get(MANIFEST_KEY, "json")) || [];
+  for (const id of ids) {
+    if (!manifest.includes(id)) manifest.push(id);
+  }
+  await env.VOTES.put(MANIFEST_KEY, JSON.stringify(manifest));
+  await env.VOTES.delete(CACHE_KEY);
   return json({ ok: true });
 }
 
@@ -110,6 +130,14 @@ async function handleVote(request, env) {
     return json({ error: "announcementId, voterId and answers are required" }, 400);
   }
 
+  // One vote per (announcementId, voterId) — first one wins. Checked before
+  // the rate limiter so honest duplicate clients never consume quota.
+  const dedupeKey = `vote:${announcementId}:${voterId}`;
+  const existingVote = await env.VOTES.get(dedupeKey);
+  if (existingVote) {
+    return json({ ok: true, duplicate: true });
+  }
+
   // Rate limit per IP (works behind Cloudflare: cf-connecting-ip).
   const ip = request.headers.get("cf-connecting-ip") || "unknown";
   const windowKey = Math.floor(Date.now() / 1000 / RATE_LIMIT_WINDOW);
@@ -120,12 +148,7 @@ async function handleVote(request, env) {
   }
   await env.VOTES.put(rateKey, String(current + 1), { expirationTtl: RATE_LIMIT_WINDOW });
 
-  // One vote per (announcementId, voterId) — first one wins.
-  const dedupeKey = `vote:${announcementId}:${voterId}`;
-  const existingVote = await env.VOTES.get(dedupeKey);
-  if (existingVote) {
-    return json({ ok: true, duplicate: true });
-  }
+  await ensureInManifest(env, announcementId);
 
   const isText = Object.keys(answers).some((k) => k === "text" && typeof answers[k] === "string");
   if (isText) {
@@ -141,26 +164,38 @@ async function handleVote(request, env) {
   await env.VOTES.put(dedupeKey, JSON.stringify({ votedAt: body.votedAt || null, version: body.version || null }));
 
   await env.VOTES.put("meta:updatedAt", new Date().toISOString());
+  await env.VOTES.delete(CACHE_KEY); // invalidate the snapshot so /results is fresh
   return json({ ok: true });
+}
+
+/** Build the results snapshot with zero list() calls. */
+async function buildResults(env) {
+  const cached = await env.VOTES.get(CACHE_KEY, "json");
+  if (cached) return cached;
+
+  const manifest = (await env.VOTES.get(MANIFEST_KEY, "json")) || [];
+  const results = {};
+  const texts = {};
+  let updatedAt = await env.VOTES.get("meta:updatedAt");
+
+  for (const id of manifest) {
+    const [counts, textsForId] = await Promise.all([
+      env.VOTES.get(`counts:${id}`, "json"),
+      env.VOTES.get(`texts:${id}`, "json"),
+    ]);
+    if (counts) results[id] = counts;
+    if (textsForId) texts[id] = textsForId;
+  }
+
+  const payload = { updatedAt: updatedAt || null, results, texts };
+  await env.VOTES.put(CACHE_KEY, JSON.stringify(payload), { expirationTtl: RESULTS_CACHE_TTL });
+  return payload;
 }
 
 async function handleResults(env) {
   await prepare(env);
-  const updatedAt = await env.VOTES.get("meta:updatedAt");
-
-  const countsList = await env.VOTES.list({ prefix: "counts:" });
-  const results = {};
-  for (const item of countsList.keys) {
-    results[item.name.slice("counts:".length)] = await env.VOTES.get(item.name, "json");
-  }
-
-  const textsList = await env.VOTES.list({ prefix: "texts:" });
-  const texts = {};
-  for (const item of textsList.keys) {
-    texts[item.name.slice("texts:".length)] = await env.VOTES.get(item.name, "json");
-  }
-
-  return json({ updatedAt: updatedAt || null, results, texts });
+  const payload = await buildResults(env);
+  return json(payload);
 }
 
 export default {

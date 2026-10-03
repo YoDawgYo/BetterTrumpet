@@ -359,14 +359,19 @@ namespace EarTrumpet.UI.ViewModels
             SyncRules();
         }
 
-        private void ClearAllRules()
+        private void ClearAllRules() => ClearAllRules(confirm: true);
+
+        // The web settings window confirms inline before sending the action.
+        public void ClearAllRules(bool confirm)
         {
-            if (Rules.Count == 0)
+            // Rows are only synced while the classic page is visible, so the web
+            // path also checks the stored rules.
+            if (Rules.Count == 0 && _settings.GetAppRules().Count == 0)
             {
                 return;
             }
 
-            var result = MessageBox.Show(
+            var result = !confirm ? MessageBoxResult.Yes : MessageBox.Show(
                 Properties.Resources.AppRulesClearAllConfirmText,
                 Properties.Resources.AppRulesClearAllConfirmTitle,
                 MessageBoxButton.YesNo,

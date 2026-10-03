@@ -28,6 +28,11 @@ namespace EarTrumpet.DataModel.WindowsAudio.Internal
                 if (value != _default)
                 {
                     SetDefaultDevice(value, ERole.eMultimedia);
+                    // The system confirmation callback may never fire (virtual/RDP devices),
+                    // so commit the requested default immediately. QueryDefaultDevice stays
+                    // authoritative: if Windows later reports a different endpoint, the
+                    // regular DefaultChanged path corrects this value.
+                    _default = value;
                     DefaultChanged?.Invoke(this, Default);
                 }
             }

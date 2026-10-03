@@ -525,13 +525,16 @@ namespace EarTrumpet.UI.Views
                     profiles.CaptureAllDevices = GetBoolean(message, "allDevices");
                     profiles.SaveCurrentCommand.Execute(null);
                     break;
+                // Web actions never raise WPF MessageBoxes: applying is
+                // immediate and destructive actions are confirmed inline by
+                // the web UI, which sends `confirmed: true`.
                 case "profileApply" when profiles != null:
                     SelectProfile(profiles, message);
-                    profiles.ApplyProfileCommand.Execute(null);
+                    profiles.ApplySelectedProfile(confirm: false);
                     break;
                 case "profileDelete" when profiles != null:
                     SelectProfile(profiles, message);
-                    profiles.DeleteProfileCommand.Execute(null);
+                    profiles.DeleteSelectedProfile(confirm: false);
                     break;
                 case "profileExport" when profiles != null:
                     SelectProfile(profiles, message);
@@ -549,11 +552,12 @@ namespace EarTrumpet.UI.Views
                     profiles.RenameSelectedProfile(GetString(message, "name"));
                     break;
                 case "appRuleAdd":
-                    var typedExe = GetString(message, "exeName").Trim().Trim('"');
-                    var exeName = Path.GetFileNameWithoutExtension(typedExe);
+                    // Adding creates a neutral profile; every behavior stays
+                    // opt-in, matching the classic window.
+                    var exeName = EarTrumpet.Logic.AppIdentity.NormalizeExeName(GetString(message, "exeName"));
                     if (!string.IsNullOrWhiteSpace(exeName))
                     {
-                        App.Settings.SetAppHardMuted(exeName, true, exeName);
+                        App.Settings.AddAppRule(exeName, exeName);
                     }
                     break;
                 case "appRuleBrowse" when rules != null:
@@ -566,7 +570,7 @@ namespace EarTrumpet.UI.Views
                     App.Settings.RemoveAppRule(GetString(message, "exeName"));
                     break;
                 case "appRuleClear" when rules != null:
-                    rules.ClearAllRulesCommand.Execute(null);
+                    rules.ClearAllRules(confirm: false);
                     break;
                 case "folderRuleAdd" when rules != null:
                     rules.AddFolderVolumeRuleCommand.Execute(null);
@@ -669,7 +673,9 @@ namespace EarTrumpet.UI.Views
                 {
                     id = GetPageId(page),
                     page.Title,
-                    subtitle = page.Subtitle ?? string.Empty,
+                    // The shared privacy subtitle still mentions diagnostics, which
+                    // live on About in the web UI.
+                    subtitle = page is EarTrumpetPrivacyPageViewModel ? R("WebSettingsPrivacyPageSubtitle") : page.Subtitle ?? string.Empty,
                     migrated = IsMigrated(page),
                 }),
             });
@@ -679,7 +685,7 @@ namespace EarTrumpet.UI.Views
                 appName = "BetterTrumpet",
                 locale = CultureInfo.CurrentUICulture.Name,
                 categories,
-                labels = new Dictionary<string, string>
+                labels = StripTrailingColons(new Dictionary<string, string>
                 {
                     ["searchPlaceholder"] = R("WebSettingsSearchPlaceholder"), ["classicSettings"] = R("WebSettingsClassicButton"),
                     ["noResults"] = R("WebSettingsNoResults"),
@@ -697,7 +703,8 @@ namespace EarTrumpet.UI.Views
                     ["trayDescription"] = R("SettingsTrayIconDesc"), ["useLegacyIcon"] = R("SettingsUseLegacyEarTrumpetIcon"),
                     ["showAppTooltips"] = R("SettingsShowAppTooltips"), ["showAppTooltipsDescription"] = R("SettingsAppTooltipsDesc"),
                     ["hiddenApps"] = R("SettingsHiddenAppsTitle"), ["hiddenAppsDescription"] = R("SettingsHiddenAppsDesc"),
-                    ["restoreAll"] = R("SettingsRestoreHiddenApps"), ["restore"] = R("WebSettingsRestoreButton"),
+                    ["restoreAll"] = R("SettingsRestoreHiddenApps"), ["restoreAllDevices"] = R("WebSettingsRestoreAllDevices"),
+                    ["restore"] = R("WebSettingsRestoreButton"),
                     ["hiddenDevices"] = R("WebSettingsHiddenDevices"),
                     ["scrollWheelTitle"] = R("SettingsScrollWheel"), ["scrollWheelDescription"] = R("SettingsScrollWheelDesc"),
                     ["useScrollWheelInTray"] = R("SettingsUseScrollWheelInTray"), ["useScrollWheelInTrayDescription"] = R("SettingsScrollWheelTrayTip"),
@@ -707,6 +714,8 @@ namespace EarTrumpet.UI.Views
                     ["useVolumeTickSoundDescription"] = R("SettingsVolumeTickSoundTip"), ["shortcuts"] = R("ShortcutsPageText"),
                     ["deviceChangeTitle"] = R("SettingsDeviceChangeNotify"), ["deviceChangeDescription"] = R("SettingsDeviceChangeNotifyDesc"),
                     ["notifyOnDeviceChange"] = R("SettingsNotifyOnDeviceChange"),
+                    ["showDeviceSwitchNotification"] = R("WebSettingsShowDeviceSwitchNotification"),
+                    ["showDeviceSwitchNotificationDescription"] = R("WebSettingsShowDeviceSwitchNotificationDesc"),
                     ["focusLostTitle"] = R("SettingsFocusLostVolume"), ["focusLostDescription"] = R("SettingsFocusLostVolumeDesc"),
                     ["useFocusLostVolume"] = R("SettingsUseFocusLostVolume"),
                     ["focusLostAttenuate"] = R("SettingsFocusLostAttenuate"), ["focusLostAttenuateHint"] = R("SettingsFocusLostAttenuateHint"),
@@ -717,7 +726,8 @@ namespace EarTrumpet.UI.Views
                     ["deviceShortcuts"] = R("WebSettingsDeviceShortcuts"), ["deviceShortcutsDesc"] = R("WebSettingsDeviceShortcutsDesc"),
                     ["defaultDeviceBadge"] = R("WebSettingsDefaultDeviceBadge"),
                     ["profileCapture"] = R("SettingsSaveCurrentVolumes"), ["profileCaptureDescription"] = R("SettingsSaveCurrentVolumesDesc"),
-                    ["profileName"] = R("SettingsThemeNamePlaceholder"), ["allDevices"] = R("SettingsQuickTrumpetAllDevices"),
+                    ["profileName"] = R("WebSettingsPresetName"), ["presetName"] = R("WebSettingsPresetName"),
+                    ["themeName"] = R("WebSettingsThemeName"), ["allDevices"] = R("SettingsQuickTrumpetAllDevices"),
                     ["confirmation"] = R("SettingsQuickTrumpetConfirmation"), ["savedProfiles"] = R("SettingsSavedProfiles"),
                     ["apply"] = R("SettingsProfileApply"), ["delete"] = R("SettingsProfileDelete"),
                     ["save"] = R("WebSettingsSave"), ["rename"] = R("WebSettingsRename"),
@@ -742,7 +752,7 @@ namespace EarTrumpet.UI.Views
                     ["smoothAnimation"] = R("SettingsSmoothVolumeAnimation"), ["animationSpeed"] = R("SettingsAnimationSpeedLabel"),
                     ["peakMeter"] = R("SettingsPeakMeter"), ["refreshRate"] = R("SettingsRefreshRate"),
                     ["effectiveRate"] = R("WebSettingsEffectiveRate"), ["effectiveRateHint"] = R("WebSettingsEffectiveRateHint"),
-                    ["appearanceDescription"] = R("SettingsColorPaletteDesc"),
+                    ["appearanceDescription"] = R("WebSettingsAppearanceDesc"),
                     ["dynamicAlbum"] = R("SettingsDynamicAlbumArt"), ["dynamicAlbumDescription"] = R("SettingsDynamicAlbumArtDesc"),
                     ["enableDynamicAlbum"] = R("SettingsEnableDynamicAlbumArt"), ["presets"] = R("SettingsTabPresets"),
                     ["customColors"] = R("SettingsCustomColors"), ["customColorsDescription"] = R("SettingsCustomColorsDesc"),
@@ -757,13 +767,14 @@ namespace EarTrumpet.UI.Views
                     ["updatesDescription"] = R("SettingsUpdatesDesc"), ["autoUpdates"] = R("AutoUpdateCheckboxText"),
                     ["notifyFor"] = R("SettingsNotifyFor"), ["checkUpdate"] = R("SettingsCheckUpdate"),
                     ["installUpdate"] = R("SettingsInstallUpdate"), ["privacyPageTitle"] = R("PrivacySettingsPageText"),
-                    ["privacyPageSubtitle"] = R("PrivacySettingsPageSubtitle"), ["privacy"] = R("PrivacyCheckboxText"),
+                    ["privacyPageSubtitle"] = R("WebSettingsPrivacyPageSubtitle"), ["privacy"] = R("PrivacyCheckboxText"),
                     ["privacyDescription"] = R("SettingsTelemetryDesc"), ["privacyPolicy"] = R("PrivacyPolicyText"),
                     ["whatsNewFeed"] = R("PrivacyAnnouncementsText"), ["whatsNewFeedDesc"] = R("PrivacyAnnouncementsDesc"),
                     ["settingsData"] = R("SettingsExportImport"),
                     ["settingsDataDescription"] = R("SettingsExportImportDesc"), ["exportSettings"] = R("SettingsExportSettings"),
                     ["importSettings"] = R("SettingsImportSettings"),
-                    ["diagnostics"] = R("SettingsSendDiagnostics"), ["diagnosticsDescription"] = R("SettingsSendDiagnosticsDesc"),
+                    ["diagnostics"] = R("WebSettingsDiagnostics"), ["exportDiagnostics"] = R("WebSettingsExportDiagnostics"),
+                    ["diagnosticsDescription"] = R("WebSettingsDiagnosticsDesc"),
                     ["github"] = R("AboutGitHub"), ["feedback"] = R("AboutFeedback"), ["bugReport"] = R("AboutReportBug"),
                     ["monkeySound"] = R("SettingsUseMonkeyTickSound"), ["monkeySoundDescription"] = R("SettingsUseMonkeyTickSoundTip"),
                     ["empty"] = R("WebSettingsEmpty"), ["seconds"] = R("WebSettingsSeconds"),
@@ -775,7 +786,21 @@ namespace EarTrumpet.UI.Views
                     ["updateChannel1"] = R("SettingsUpdateChannelMinorMajorDesc"),
                     ["updateChannel2"] = R("SettingsUpdateChannelMajorOnlyDesc"),
                     ["updateChannel3"] = R("SettingsUpdateChannelNoneDesc"),
-                },
+                    ["peakStyleClassic"] = R("WebSettingsPeakStyleClassic"), ["peakStyleDotted"] = R("WebSettingsPeakStyleDotted"),
+                    ["peakStyleBlocks"] = R("WebSettingsPeakStyleBlocks"), ["peakStyleBars"] = R("WebSettingsPeakStyleBars"),
+                    ["peakStyleWave"] = R("WebSettingsPeakStyleWave"), ["secondsShort"] = R("WebSettingsSecondsShort"),
+                    ["shortcutsGlobal"] = R("WebSettingsShortcutsGlobal"), ["updatesSection"] = R("WebSettingsUpdatesSection"),
+                    ["mediaPopupSection"] = R("WebSettingsMediaPopupSection"), ["privacySection"] = R("WebSettingsPrivacySection"),
+                    ["privacySectionDescription"] = R("WebSettingsPrivacySectionDesc"),
+                    ["customTheme"] = R("WebSettingsCustomTheme"), ["confirmDelete"] = R("WebSettingsConfirmDelete"),
+                    ["confirmClearAll"] = R("WebSettingsConfirmClearAll"), ["cancel"] = R("WebSettingsCancel"),
+                    ["saved"] = R("WebSettingsSaved"), ["applied"] = R("WebSettingsApplied"),
+                    ["hexColor"] = R("WebSettingsHexColor"), ["preview"] = R("WebSettingsPreview"),
+                    ["appHealth"] = R("WebSettingsAppHealth"), ["searchShortcut"] = R("WebSettingsSearchShortcut"),
+                    ["disabledByEco"] = R("WebSettingsDisabledByEco"),
+                    ["requiresSmoothAnimation"] = R("WebSettingsRequiresSmoothAnimation"),
+                    ["requiresAutoCheck"] = R("WebSettingsRequiresAutoCheck"),
+                }),
                 values = new
                 {
                     runAtStartup = App.Settings.RunAtStartup,
@@ -855,7 +880,7 @@ namespace EarTrumpet.UI.Views
                 status = new
                 {
                     version = about?.AboutText ?? $"v{App.PackageVersion}",
-                    health = about?.HealthSummary ?? string.Empty,
+                    health = LocalizeHealthSummary(about?.HealthSummary),
                     updateText = updates?.UpdateStatusText ?? string.Empty,
                     updateDetail = updates?.LastCheckText ?? string.Empty,
                     updateAvailable = updates?.IsUpdateAvailable ?? false,
@@ -877,6 +902,42 @@ namespace EarTrumpet.UI.Views
         private static string R(string key)
         {
             return EarTrumpet.Properties.Resources.ResourceManager.GetString(key, CultureInfo.CurrentUICulture) ?? key;
+        }
+
+        // Many labels are shared with the classic window, where they sit in
+        // front of a control ("Couleur du curseur :"). The web UI lays them out
+        // as titles, so a trailing colon never belongs there.
+        private static Dictionary<string, string> StripTrailingColons(Dictionary<string, string> labels)
+        {
+            foreach (var key in labels.Keys.ToList())
+            {
+                var value = labels[key] ?? string.Empty;
+                labels[key] = value.TrimEnd().TrimEnd(':', '\uFF1A').TrimEnd();
+            }
+
+            return labels;
+        }
+
+        // HealthMonitor builds an English string for diagnostics exports; only
+        // the copy shown in the web About page is localized.
+        private static string LocalizeHealthSummary(string summary)
+        {
+            if (string.IsNullOrEmpty(summary))
+            {
+                return string.Empty;
+            }
+
+            if (summary == "Health data unavailable")
+            {
+                return R("WebSettingsHealthUnavailable");
+            }
+
+            return summary
+                .Replace("Memory:", R("WebSettingsHealthMemory") + ":")
+                .Replace("(peak:", "(" + R("WebSettingsHealthPeak") + ":")
+                .Replace("User:", R("WebSettingsHealthUser") + ":")
+                .Replace("Threads:", R("WebSettingsHealthThreads") + ":")
+                .Replace("Uptime:", R("WebSettingsHealthUptime") + ":");
         }
 
         private static System.Collections.ObjectModel.ObservableCollection<EarTrumpet.DataModel.Audio.IAudioDevice> GetPlaybackDevices()
@@ -940,12 +1001,12 @@ namespace EarTrumpet.UI.Views
             // preferring them here made recorded shortcuts never display.
             return new object[]
             {
-                new { id = "flyout", label = R("SettingsOpenEarTrumpetText"), description = R("SettingsOpenEarTrumpetText"), value = App.Settings.FlyoutHotkey.ToString() },
-                new { id = "mixer", label = R("SettingsOpenMixerText"), description = R("SettingsOpenMixerText"), value = App.Settings.MixerHotkey.ToString() },
-                new { id = "settings", label = R("SettingsOpenSettingsText"), description = R("SettingsOpenSettingsText"), value = App.Settings.SettingsHotkey.ToString() },
-                new { id = "volumeUp", label = R("SettingsAbsoluteVolumeUpText"), description = R("SettingsAbsoluteVolumeDesc"), value = App.Settings.AbsoluteVolumeUpHotkey.ToString() },
-                new { id = "volumeDown", label = R("SettingsAbsoluteVolumeDownText"), description = R("SettingsAbsoluteVolumeDesc"), value = App.Settings.AbsoluteVolumeDownHotkey.ToString() },
-                new { id = "switchDevice", label = R("SettingsSwitchDevice"), description = R("SettingsSwitchDevice"), value = App.Settings.SwitchDeviceHotkey.ToString() },
+                new { id = "flyout", label = R("SettingsOpenEarTrumpetText"), description = R("WebSettingsHotkeyFlyoutDesc"), value = App.Settings.FlyoutHotkey.ToString() },
+                new { id = "mixer", label = R("SettingsOpenMixerText"), description = R("WebSettingsHotkeyMixerDesc"), value = App.Settings.MixerHotkey.ToString() },
+                new { id = "settings", label = R("SettingsOpenSettingsText"), description = R("WebSettingsHotkeySettingsDesc"), value = App.Settings.SettingsHotkey.ToString() },
+                new { id = "volumeUp", label = R("SettingsAbsoluteVolumeUpText"), description = R("WebSettingsHotkeyVolumeUpDesc"), value = App.Settings.AbsoluteVolumeUpHotkey.ToString() },
+                new { id = "volumeDown", label = R("SettingsAbsoluteVolumeDownText"), description = R("WebSettingsHotkeyVolumeDownDesc"), value = App.Settings.AbsoluteVolumeDownHotkey.ToString() },
+                new { id = "switchDevice", label = R("SettingsSwitchDevice"), description = R("WebSettingsHotkeySwitchDeviceDesc"), value = App.Settings.SwitchDeviceHotkey.ToString() },
             };
         }
 

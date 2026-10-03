@@ -15,6 +15,8 @@ namespace EarTrumpet.Interop
         public const int WM_MBUTTONUP = 0x0208;
         public const int WM_SETTINGCHANGE = 0x001A;
         public const int SPI_SETWORKAREA = 0x002F;
+        public const int TTM_ACTIVATE = 0x401;
+        public const int TTM_POP = 0x41C;
         public const int TTM_POPUP = 0x422;
         public const int TB_GETTOOLTIPS = 0x423;
 
