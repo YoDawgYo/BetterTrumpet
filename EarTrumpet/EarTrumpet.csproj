@@ -167,8 +167,14 @@
     <ItemGroup>
       <SettingsWebAsset Include="$(ProjectDir)SettingsWeb\dist\**\*" />
     </ItemGroup>
+    <!-- OutputPath passed on the command line may lack a trailing slash
+         (e.g. -p:OutputPath=..\Build\Release), which used to drop the bundle
+         into Build\ReleaseSettingsWeb and ship packages without it. -->
+    <PropertyGroup>
+      <_BtWebOutDir>$([MSBuild]::EnsureTrailingSlash('$(OutputPath)'))</_BtWebOutDir>
+    </PropertyGroup>
     <Copy SourceFiles="@(SettingsWebAsset)"
-          DestinationFiles="@(SettingsWebAsset->'$(OutputPath)SettingsWeb\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(SettingsWebAsset->'$(_BtWebOutDir)SettingsWeb\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 
@@ -181,8 +187,14 @@
       <AnnouncementsWebAsset Include="$(ProjectDir)AnnouncementsWeb\**\*" />
       <AnnouncementsWebAsset Include="$(ProjectDir)Assets\icon.png" />
     </ItemGroup>
+    <!-- OutputPath passed on the command line may lack a trailing slash
+         (e.g. -p:OutputPath=..\Build\Release), which used to drop the bundle
+         into Build\ReleaseSettingsWeb and ship packages without it. -->
+    <PropertyGroup>
+      <_BtWebOutDir>$([MSBuild]::EnsureTrailingSlash('$(OutputPath)'))</_BtWebOutDir>
+    </PropertyGroup>
     <Copy SourceFiles="@(AnnouncementsWebAsset)"
-          DestinationFiles="@(AnnouncementsWebAsset->'$(OutputPath)AnnouncementsWeb\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(AnnouncementsWebAsset->'$(_BtWebOutDir)AnnouncementsWeb\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
   </Target>
 
