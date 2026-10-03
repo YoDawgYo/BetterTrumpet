@@ -294,3 +294,6 @@ votes-worker/.wrangler/
 /issues_closed.json
 /bettertrumpet.html
 /downloads-dashboard.html
+
+# Local skill notes (not part of the repo)
+/Skills/
