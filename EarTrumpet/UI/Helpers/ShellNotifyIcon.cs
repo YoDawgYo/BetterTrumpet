@@ -11,7 +11,6 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
-using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace EarTrumpet.UI.Helpers
@@ -333,8 +332,6 @@ namespace EarTrumpet.UI.Helpers
                 Trace.WriteLine("ShellNotifyIcon ShowContextMenu");
                 var contextMenu = new ContextMenu
                 {
-                    Background = new SolidColorBrush(Color.FromArgb(142, 24, 24, 26)),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(88, 255, 255, 255)),
                     FlowDirection = SystemSettings.IsRTL ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
                     HasDropShadow = false,
                     StaysOpen = true,
@@ -347,8 +344,8 @@ namespace EarTrumpet.UI.Helpers
                 }
 
                 Themes.Options.SetSource(contextMenu, Themes.Options.SourceKind.System);
-                Themes.Brush.SetBackground(contextMenu, "Theme=#18181A/0.36/0.86, HighContrast=Menu");
-                Themes.Brush.SetBorderBrush(contextMenu, "Theme=White/0.28/0.28, HighContrast=ControlText");
+                Themes.Brush.SetBackground(contextMenu, "AcrylicMenuBackground");
+                Themes.Brush.SetBorderBrush(contextMenu, "AcrylicMenuBorder");
                 contextMenu.PreviewKeyDown += (_, e) =>
                 {
                     if (e.Key == Key.Escape)
@@ -367,7 +364,7 @@ namespace EarTrumpet.UI.Helpers
                     // Disable only the exit animation.
                     var popup = (Popup)contextMenu.Parent;
                     popup.PopupAnimation = PopupAnimation.None;
-                    ApplyTrayContextMenuAcrylic(popup, contextMenu);
+                    UI.Behaviors.PopupEx.ApplyMenuAcrylic(popup, contextMenu);
                     if (HasValidContextMenuPoint(point))
                     {
                         PositionTrayContextMenu(popupSource.Handle, point);
@@ -513,19 +510,6 @@ namespace EarTrumpet.UI.Helpers
             }
 
             return WindowsTaskbar.Current.Location;
-        }
-
-        private static void ApplyTrayContextMenuAcrylic(Popup popup, DependencyObject themeTarget)
-        {
-            if (!SystemSettings.IsTransparencyEnabled || SystemParameters.HighContrast)
-            {
-                return;
-            }
-
-            AccentPolicyLibrary.EnableAcrylic(
-                popup,
-                Themes.Manager.Current.ResolveRef(themeTarget, "AcrylicColor_Flyout"),
-                User32.AccentFlags.None);
         }
     }
 }

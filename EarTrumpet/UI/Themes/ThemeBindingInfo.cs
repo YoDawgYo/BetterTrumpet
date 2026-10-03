@@ -1,5 +1,4 @@
 ﻿using System;
-using System.ComponentModel;
 using System.Reflection;
 using System.Windows;
 
@@ -32,14 +31,10 @@ namespace EarTrumpet.UI.Themes
                 ((FrameworkContentElement)element).Loaded += Element_Loaded;
             }
 
-            // Listen for Options.Source property changes to handle the case where
-            // the brush is created before Options.Source has propagated from the parent.
-            // This fixes the backdrop not rendering correctly on startup (GitHub #13).
-            var descriptor = DependencyPropertyDescriptor.FromProperty(Options.SourceProperty, element.GetType());
-            if (descriptor != null)
-            {
-                descriptor.AddValueChanged(element, OnOptionsSourceChanged);
-            }
+            // Options.Source changes are picked up through that property's own metadata callback,
+            // which routes back here via Brush.ReapplyBindings. It used to be a per-instance
+            // DependencyPropertyDescriptor.AddValueChanged subscription, which roots the element in
+            // a static table until RemoveValueChanged runs.
         }
 
         public void Leaving()
@@ -47,7 +42,6 @@ namespace EarTrumpet.UI.Themes
             if (_element.TryGetTarget(out var element))
             {
                 UnregisterLoaded(element);
-                UnregisterOptionsSourceChanged(element);
 
                 if (_isAttached)
                 {
@@ -58,7 +52,6 @@ namespace EarTrumpet.UI.Themes
             _isAttached = false;
             _element = null;
             _initialValue = default(T);
-            Manager.Current.ThemeChanged -= ThemeChanged;
         }
 
         private void Element_Loaded(object sender, RoutedEventArgs e)
@@ -82,25 +75,6 @@ namespace EarTrumpet.UI.Themes
             }
         }
 
-        private void UnregisterOptionsSourceChanged(DependencyObject element)
-        {
-            var descriptor = DependencyPropertyDescriptor.FromProperty(Options.SourceProperty, element.GetType());
-            if (descriptor != null)
-            {
-                descriptor.RemoveValueChanged(element, OnOptionsSourceChanged);
-            }
-        }
-
-        private void OnOptionsSourceChanged(object sender, EventArgs e)
-        {
-            if (_element.TryGetTarget(out var element))
-            {
-                // Only apply if we haven't attached yet, or if we need to reapply due to theme change
-                // This prevents duplicate application when the property inherits during construction
-                ApplyValue(element);
-            }
-        }
-
         public void ApplyValue(DependencyObject element)
         {
             var type = Options.GetSource(element);
@@ -110,14 +84,25 @@ namespace EarTrumpet.UI.Themes
                 {
                     _isAttached = true;
                     _initialValue = (T)ReadPropertyValue(element);
-                    Manager.Current.ThemeChanged += ThemeChanged;
                 }
                 WritePropertyValue(element, _applyCallback.Invoke(element, _value));
             }
         }
 
-        private void ThemeChanged()
+        /// <summary>
+        /// Repaints this binding. Driven by Brush, which owns the single subscription to
+        /// Manager.ThemeChanged on behalf of every binding in its registry; subscribing from here
+        /// would root this instance in that singleton for the life of the process.
+        /// </summary>
+        internal void ThemeChanged()
         {
+            // Not attached means Options.Source has never resolved, so there is no captured initial
+            // value to restore later and nothing to repaint. Options.Source changing will apply it.
+            if (!_isAttached)
+            {
+                return;
+            }
+
             if ((_element != null) && _element.TryGetTarget(out var element))
             {
                 WritePropertyValue(element, _applyCallback.Invoke(element, _value));

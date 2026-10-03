@@ -29,10 +29,23 @@ namespace EarTrumpet.Extensions
 
         public static void EnableRoundedCornersIfApplicable(this Window window)
         {
-            if (Environment.OSVersion.IsAtLeast(OSVersions.Windows11))
+            EnableRoundedCornersIfApplicable(window.GetHandle());
+        }
+
+        /// <summary>
+        /// Rounds an HWND at the DWM level. Required in addition to any WPF CornerRadius when
+        /// the window also carries a SetWindowCompositionAttribute backdrop (acrylic): that API
+        /// fills the entire window rect and ignores WPF corner radii, so without this the square
+        /// backdrop bleeds out past the rounded content. Also usable for Popup-hosted HWNDs,
+        /// which are not Windows and so cannot go through the extension method above.
+        /// No-op before Windows 11, where the backdrop therefore stays square.
+        /// </summary>
+        internal static void EnableRoundedCornersIfApplicable(IntPtr handle)
+        {
+            if (handle != IntPtr.Zero && Environment.OSVersion.IsAtLeast(OSVersions.Windows11))
             {
                 int attributeValue = (int)DwmApi.DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND;
-                DwmApi.DwmSetWindowAttribute(window.GetHandle(), DwmApi.DWMWA_WINDOW_CORNER_PREFERENCE, ref attributeValue, Marshal.SizeOf(attributeValue));
+                DwmApi.DwmSetWindowAttribute(handle, DwmApi.DWMWA_WINDOW_CORNER_PREFERENCE, ref attributeValue, Marshal.SizeOf(attributeValue));
             }
         }
 

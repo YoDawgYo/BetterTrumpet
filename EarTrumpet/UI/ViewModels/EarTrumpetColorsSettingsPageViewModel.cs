@@ -27,6 +27,9 @@ namespace EarTrumpet.UI.ViewModels
         // material. The final /1 value supplies an accessible solid fallback when
         // system transparency is disabled.
         private const string FlyoutContentTintOpacity = "0.2";
+        // Alpha of the veil the menus paint over their acrylic tint. Mirrors the default in
+        // App.xaml's AcrylicMenuBackground Ref; keep the two in step.
+        private const string MenuVeilOpacity = "0.36";
 
         // Default colors from shared registry
         private static readonly Color DefaultAccentColor = ThemeRegistry.DefaultAccentColor;
@@ -938,26 +941,14 @@ namespace EarTrumpet.UI.ViewModels
                     return;
                 }
 
-                var refs = Manager.Current.References;
-
                 if (hasTextColor)
                 {
-                    var textRef = refs.FirstOrDefault(r => r.Key == "Text");
-                    if (textRef != null)
-                    {
-                        // Override with direct hex color
-                        textRef.Value = $"#{textColor.R:X2}{textColor.G:X2}{textColor.B:X2}";
-                        textRef.Rules.Clear();
-                    }
+                    // Override with direct hex color
+                    OverrideRef("Text", $"#{textColor.R:X2}{textColor.G:X2}{textColor.B:X2}");
 
-                    var grayTextRef = refs.FirstOrDefault(r => r.Key == "GrayText");
-                    if (grayTextRef != null)
-                    {
-                        // Make gray text a semi-transparent version of text color
-                        var grayVersion = Color.FromArgb(0xAA, textColor.R, textColor.G, textColor.B);
-                        grayTextRef.Value = $"#{grayVersion.A:X2}{grayVersion.R:X2}{grayVersion.G:X2}{grayVersion.B:X2}";
-                        grayTextRef.Rules.Clear();
-                    }
+                    // Make gray text a semi-transparent version of text color
+                    var grayVersion = Color.FromArgb(0xAA, textColor.R, textColor.G, textColor.B);
+                    OverrideRef("GrayText", $"#{grayVersion.A:X2}{grayVersion.R:X2}{grayVersion.G:X2}{grayVersion.B:X2}");
                 }
 
                 if (hasWindowBg)
@@ -968,46 +959,25 @@ namespace EarTrumpet.UI.ViewModels
                     // The flyout content layer has its own brush and otherwise keeps the
                     // Windows accent color on top of the acrylic tint. Keep this layer
                     // translucent so the DWM acrylic material remains visible through it.
-                    var flyoutBgRef = refs.FirstOrDefault(r => r.Key == "FlyoutBackground");
-                    if (flyoutBgRef != null)
-                    {
-                        flyoutBgRef.Value = $"{bgHex}/{FlyoutContentTintOpacity}/1";
-                        flyoutBgRef.Rules.Clear();
-                    }
+                    OverrideRef("FlyoutBackground", $"{bgHex}/{FlyoutContentTintOpacity}/1");
 
-                    // Override Background
-                    var bgRef = refs.FirstOrDefault(r => r.Key == "Background");
-                    if (bgRef != null)
-                    {
-                        bgRef.Value = bgHex;
-                        bgRef.Rules.Clear();
-                    }
-
-                    // Override PopupBackground
-                    var popupBgRef = refs.FirstOrDefault(r => r.Key == "PopupBackground");
-                    if (popupBgRef != null)
-                    {
-                        popupBgRef.Value = bgHex;
-                        popupBgRef.Rules.Clear();
-                    }
+                    OverrideRef("Background", bgHex);
+                    OverrideRef("PopupBackground", bgHex);
 
                     // Tint the flyout ACRYLIC with the custom color, but keep it translucent.
                     // The "/opacity" suffix is transparency-aware (full opacity is used only
                     // when system transparency is off), so the acrylic blur stays visible.
-                    var acrylicFlyoutRef = refs.FirstOrDefault(r => r.Key == "AcrylicColor_Flyout");
-                    if (acrylicFlyoutRef != null)
-                    {
-                        acrylicFlyoutRef.Value = $"{bgHex}/{acrylicOpacity}/1";
-                        acrylicFlyoutRef.Rules.Clear();
-                    }
+                    OverrideRef("AcrylicColor_Flyout", $"{bgHex}/{acrylicOpacity}/1");
 
-                    // Override AcrylicBackgroundFallback
-                    var acrylicFallbackRef = refs.FirstOrDefault(r => r.Key == "AcrylicBackgroundFallback");
-                    if (acrylicFallbackRef != null)
-                    {
-                        acrylicFallbackRef.Value = bgHex;
-                        acrylicFallbackRef.Rules.Clear();
-                    }
+                    // Same for the menu acrylic, and for the veil painted over it. These two have to
+                    // be overridden together: the tint is a window-level DWM effect that the veil's
+                    // alpha shows through, so tinting only one of them makes the menus disagree with
+                    // themselves. AcrylicMenuBorder is left alone because it is transparent outside high
+                    // contrast, where a custom colour has no business overriding the system border.
+                    OverrideRef("AcrylicColor_Menu", $"{bgHex}/{acrylicOpacity}/1");
+                    OverrideRef("AcrylicMenuBackground", $"{bgHex}/{MenuVeilOpacity}/1");
+
+                    OverrideRef("AcrylicBackgroundFallback", bgHex);
                 }
 
                 // Fire theme change to repaint all UI elements
@@ -1020,13 +990,55 @@ namespace EarTrumpet.UI.ViewModels
         }
 
         /// <summary>
+        /// Points a theme Ref at a custom colour while leaving high contrast alone.
+        /// </summary>
+        /// <remarks>
+        /// Under high contrast these Refs must keep resolving to system colours -- that is the whole
+        /// point of the mode, and a custom background is exactly the kind of thing it exists to
+        /// override. Writing <see cref="Ref.Value"/> cannot express that: BrushValueParser's
+        /// FindReference short-circuits on a non-null Value and never looks at the rules. So the
+        /// override goes in as rules instead, with the backed-up original nested under a
+        /// HighContrast branch, whether the original expressed itself as a Value string
+        /// ("Theme=..., HighContrast=WindowText") or as its own rule list.
+        ///
+        /// Outside high contrast that HighContrast rule is false and the unconditional rule below it
+        /// wins, so the resolved colour is the same as it was when this wrote Value directly.
+        /// </remarks>
+        private void OverrideRef(string key, string value)
+        {
+            var reference = Manager.Current.References.FirstOrDefault(r => r.Key == key);
+            if (reference == null || !_originalRefs.TryGetValue(key, out var backedUp) || backedUp is not RefBackup original)
+            {
+                return;
+            }
+
+            var highContrast = new Rule { On = Rule.Kind.HighContrast };
+            if (original.Value != null)
+            {
+                highContrast.Value = original.Value;
+            }
+            else
+            {
+                foreach (var rule in original.Rules)
+                {
+                    highContrast.Rules.Add(CloneRule(rule));
+                }
+            }
+
+            reference.Value = null;
+            reference.Rules.Clear();
+            reference.Rules.Add(highContrast);
+            reference.Rules.Add(new Rule { Value = value });
+        }
+
+        /// <summary>
         /// Back up original Ref values/rules so we can restore them when the user resets.
         /// </summary>
         private void BackupOriginalThemeRefs()
         {
             if (_refsBackedUp) return;
 
-            var keysToBackup = new[] { "Text", "GrayText", "Background", "FlyoutBackground", "PopupBackground", "AcrylicColor_Flyout", "AcrylicBackgroundFallback" };
+            var keysToBackup = new[] { "Text", "GrayText", "Background", "FlyoutBackground", "PopupBackground", "AcrylicColor_Flyout", "AcrylicColor_Menu", "AcrylicMenuBackground", "AcrylicBackgroundFallback" };
             foreach (var key in keysToBackup)
             {
                 var r = Manager.Current.References.FirstOrDefault(x => x.Key == key);

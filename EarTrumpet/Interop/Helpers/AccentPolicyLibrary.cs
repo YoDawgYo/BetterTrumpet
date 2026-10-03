@@ -32,7 +32,24 @@ namespace EarTrumpet.Interop.Helpers
 
         public static void EnableAcrylic(Visual target, Color color, User32.AccentFlags flags)
         {
-            SetAccentPolicy(HandleFromVisual(target),
+            var handle = HandleFromVisual(target);
+
+            // Acrylic and DWM corner rounding are coupled by the platform, not by choice:
+            // SetWindowCompositionAttribute fills the whole window rect and ignores WPF corner
+            // radii, so an acrylic surface with rounded content shows its tint bleeding past the
+            // corners unless DWM clips the window to the same shape. Rounding here rather than at
+            // each call site so the two cannot drift apart.
+            //
+            // Precondition: the HWND rect has to BE the visible surface. A template that reserves
+            // layout space outside the visible edge -- the ContextMenu style's HasDropShadow
+            // padding, for instance -- makes the window larger than what the user sees, and DWM
+            // then rounds the wrong rectangle. Such a caller needs its own clipping, not this.
+            //
+            // Pre-Win11 the rounding is a no-op and the tint stays square; the menus rely on tint
+            // and veil being the same colour, so there the bleed is unnoticeable, not absent.
+            WindowExtensions.EnableRoundedCornersIfApplicable(handle);
+
+            SetAccentPolicy(handle,
                 new User32.AccentPolicy
                 {
                     AccentFlags = flags,
@@ -41,6 +58,20 @@ namespace EarTrumpet.Interop.Helpers
                 });
         }
 
+        /// <summary>
+        /// Turns the acrylic material off. Deliberately does NOT undo the corner rounding that
+        /// <see cref="EnableAcrylic"/> applies, despite the asymmetry looking like an oversight.
+        /// </summary>
+        /// <remarks>
+        /// This is a transient suppression, not a teardown: AcrylicBrush calls it on every
+        /// LocationChanged and SizeChanged and restores the material 200ms later, so unrounding here
+        /// would square a window's corners for the duration of every drag and resize.
+        ///
+        /// It is also not this function's rounding to undo. Windows that want to be round say so
+        /// themselves in SourceInitialized (FlyoutWindow, SettingsWindow, MediaPopupWindow and
+        /// others all call EnableRoundedCornersIfApplicable), and nothing here records whether a
+        /// given HWND was rounded on its own behalf or on acrylic's.
+        /// </remarks>
         public static void DisableAcrylic(Visual target)
         {
             SetAccentPolicy(HandleFromVisual(target),

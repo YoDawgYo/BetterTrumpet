@@ -142,6 +142,9 @@ namespace EarTrumpet.DataModel
         /// <summary>Direct download URL for the setup .exe from GitHub release assets.</summary>
         private string _setupDownloadUrl;
 
+        /// <summary>Direct download URL for the portable .zip from GitHub release assets.</summary>
+        private string _portableDownloadUrl;
+
         public string UpdateText
         {
             get
@@ -243,8 +246,9 @@ namespace EarTrumpet.DataModel
                 ReleaseNotes = body;
                 LastCheckTime = DateTime.Now;
 
-                // Find the setup .exe asset URL
+                // Find the setup .exe and portable .zip asset URLs
                 _setupDownloadUrl = null;
+                _portableDownloadUrl = null;
                 var assets = json["assets"] as JArray;
                 if (assets != null)
                 {
@@ -253,6 +257,13 @@ namespace EarTrumpet.DataModel
                     if (setupAsset != null)
                     {
                         _setupDownloadUrl = setupAsset["browser_download_url"]?.ToString();
+                    }
+
+                    var portableAsset = assets.FirstOrDefault(a =>
+                        (a["name"]?.ToString() ?? "").EndsWith("-portable.zip", StringComparison.OrdinalIgnoreCase));
+                    if (portableAsset != null)
+                    {
+                        _portableDownloadUrl = portableAsset["browser_download_url"]?.ToString();
                     }
                 }
 
@@ -314,11 +325,19 @@ namespace EarTrumpet.DataModel
         /// <summary>
         /// Downloads the setup installer and runs it with /VERYSILENT.
         /// The installer will kill the running instance, install, and relaunch.
+        /// In portable mode, the portable .zip is applied in place instead — we must not
+        /// run the setup, which would install a separate copy system-wide.
         /// Falls back to opening the GitHub release page if download fails.
         /// </summary>
         public async void DownloadAndInstallAsync()
         {
             if (IsDownloading) return;
+
+            if (Storage.StorageFactory.IsPortableMode)
+            {
+                DownloadAndUpdatePortableAsync();
+                return;
+            }
 
             if (string.IsNullOrEmpty(_setupDownloadUrl))
             {
@@ -370,6 +389,126 @@ namespace EarTrumpet.DataModel
                 // Clean up failed download
                 try { if (tempPath != null && File.Exists(tempPath)) File.Delete(tempPath); }
                 catch { }
+
+                // Fallback: open release page
+                OpenReleasePage();
+            }
+            finally
+            {
+                IsDownloading = false;
+            }
+        }
+
+        /// <summary>
+        /// Portable mode: downloads the portable .zip and hands off to a small PowerShell
+        /// script that waits for this process to exit, replaces the app's files in place
+        /// (keeping ./config, portable.marker and any other user data), and relaunches.
+        /// Falls back to opening the GitHub release page if anything fails.
+        /// </summary>
+        private async void DownloadAndUpdatePortableAsync()
+        {
+            if (string.IsNullOrEmpty(_portableDownloadUrl))
+            {
+                Trace.WriteLine("UpdateService: No portable download URL — falling back to release page");
+                OpenReleasePage();
+                return;
+            }
+
+            IsDownloading = true;
+            string zipPath = null;
+            string extractDir = null;
+            string scriptPath = null;
+
+            try
+            {
+                zipPath = Path.Combine(Path.GetTempPath(), $"BetterTrumpet-{LatestVersion}-portable.zip");
+                extractDir = Path.Combine(Path.GetTempPath(), $"BetterTrumpet-{LatestVersion}-update");
+
+                Trace.WriteLine($"UpdateService: Portable mode — downloading {_portableDownloadUrl} → {zipPath}");
+
+                using (var downloadClient = new HttpClient())
+                {
+                    downloadClient.DefaultRequestHeaders.Add("User-Agent", "BetterTrumpet-Updater");
+                    downloadClient.Timeout = TimeSpan.FromMinutes(5);
+
+                    using (var stream = await downloadClient.GetStreamAsync(_portableDownloadUrl))
+                    using (var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        await stream.CopyToAsync(fileStream);
+                    }
+                }
+
+                Trace.WriteLine($"UpdateService: Downloaded {new FileInfo(zipPath).Length / 1024}KB — extracting");
+
+                if (Directory.Exists(extractDir))
+                {
+                    Directory.Delete(extractDir, true);
+                }
+                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir);
+
+                // The zip's content is laid out exactly like the portable install folder.
+                var sourceDir = extractDir;
+                if (!File.Exists(Path.Combine(sourceDir, "BetterTrumpet.exe")))
+                {
+                    var singleDir = Directory.GetDirectories(extractDir).FirstOrDefault();
+                    if (singleDir != null && File.Exists(Path.Combine(singleDir, "BetterTrumpet.exe")))
+                    {
+                        sourceDir = singleDir;
+                    }
+                    else
+                    {
+                        throw new InvalidDataException("Portable zip has an unexpected layout (BetterTrumpet.exe not found)");
+                    }
+                }
+
+                var exePath = Process.GetCurrentProcess().MainModule.FileName;
+                var targetDir = Path.GetDirectoryName(exePath);
+
+                // robocopy mirrors the new release over the app folder:
+                //   /MIR  — also prunes files removed from the new release (no stale DLLs);
+                //   /XD   — keeps ./config, the only user data in portable mode;
+                //   /R /W — bound retries so a transient lock (AV, lingering child process)
+                //           can't hang the script forever (robocopy defaults to ~1M retries).
+                var script = string.Join(Environment.NewLine, new[]
+                {
+                    "$ErrorActionPreference = 'Stop'",
+                    // Wait for this process to exit, capped at 60s; force-kill as a safety net
+                    // if shutdown hangs (e.g. a modal dialog is still up).
+                    $"$proc = Get-Process -Id {Environment.ProcessId} -ErrorAction SilentlyContinue",
+                    $"if ($proc -and -not $proc.WaitForExit(60000)) {{ Stop-Process -Id {Environment.ProcessId} -Force }}",
+                    "Start-Sleep -Milliseconds 500",
+                    $"robocopy '{sourceDir}' '{targetDir}' /MIR /XD '{targetDir}\\config' /XJ /R:3 /W:5 /NFL /NDL /NJH /NJS /NP | Out-Null",
+                    "if ($LASTEXITCODE -ge 8) { throw \"robocopy failed with exit code $LASTEXITCODE\" }",
+                    $"Remove-Item '{extractDir}' -Recurse -Force -ErrorAction SilentlyContinue",
+                    $"Remove-Item '{zipPath}' -Force -ErrorAction SilentlyContinue",
+                    $"Start-Process '{exePath}' -WorkingDirectory '{targetDir}'",
+                    "Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
+                });
+
+                scriptPath = Path.Combine(Path.GetTempPath(), $"BetterTrumpet-update-{LatestVersion}.ps1");
+                File.WriteAllText(scriptPath, script);
+
+                Trace.WriteLine("UpdateService: Launching portable update script, then exiting");
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{scriptPath}\"",
+                    UseShellExecute = true
+                });
+
+                // Exit via the dispatcher so the app shuts down cleanly; the script
+                // waits for this process before touching the files.
+                _ = _dispatcher.BeginInvoke(new Action(() => System.Windows.Application.Current.Shutdown()));
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"UpdateService: Portable download/update failed — {ex.Message}");
+
+                // Clean up intermediates so a later attempt starts fresh
+                try { if (zipPath != null && File.Exists(zipPath)) File.Delete(zipPath); } catch { }
+                try { if (extractDir != null && Directory.Exists(extractDir)) Directory.Delete(extractDir, true); } catch { }
+                try { if (scriptPath != null && File.Exists(scriptPath)) File.Delete(scriptPath); } catch { }
 
                 // Fallback: open release page
                 OpenReleasePage();

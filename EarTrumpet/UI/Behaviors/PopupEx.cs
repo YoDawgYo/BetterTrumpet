@@ -36,19 +36,28 @@ namespace EarTrumpet.UI.Behaviors
         private static void Popup_Opened(object sender, EventArgs e)
         {
             var popup = (Popup)sender;
-            popup.Dispatcher.BeginInvoke((Action)(() =>
-            {
-                if (!SystemSettings.IsTransparencyEnabled || SystemParameters.HighContrast)
-                {
-                    return;
-                }
+            popup.Dispatcher.BeginInvoke(
+                (Action)(() => ApplyMenuAcrylic(popup, popup.Child ?? popup)),
+                DispatcherPriority.Loaded);
+        }
 
-                var themeTarget = popup.Child ?? (DependencyObject)popup;
-                AccentPolicyLibrary.EnableAcrylic(
-                    popup,
-                    UI.Themes.Manager.Current.ResolveRef(themeTarget, "AcrylicColor_Flyout"),
-                    User32.AccentFlags.None);
-            }), DispatcherPriority.Loaded);
+        /// <summary>
+        /// Applies the menu acrylic material to a popup's window. Shared with the tray context
+        /// menu, which builds its ContextMenu in code and so cannot use the attached property.
+        /// <paramref name="themeTarget"/> is what the tint Ref resolves against, which decides
+        /// whether it follows the app or the system theme.
+        /// </summary>
+        public static void ApplyMenuAcrylic(Popup popup, DependencyObject themeTarget)
+        {
+            if (!SystemSettings.IsTransparencyEnabled || SystemParameters.HighContrast)
+            {
+                return;
+            }
+
+            AccentPolicyLibrary.EnableAcrylic(
+                popup,
+                UI.Themes.Manager.Current.ResolveRef(themeTarget, "AcrylicColor_Menu"),
+                User32.AccentFlags.None);
         }
     }
 }

@@ -46,6 +46,38 @@
                             <Theme:Rule Value="ApplicationBackgroundDarkTheme/0.7" />
                         </Theme:Ref.Rules>
                     </Theme:Ref>
+                    <!--  Tint for the tray menu and its submenus. Neutral values follow WinUI's
+                          AcrylicInAppFillColorDefault so the menus read as standard Win11 flyouts.
+                          The tint is a window-level DWM effect that WPF opacity cannot touch, so it
+                          must stay in step with AcrylicMenuBackground below: if the two disagree, the
+                          brighter one shows through around the rounded corners. Any rule added to
+                          one has to be mirrored in the other.  -->
+                    <Theme:Ref Key="AcrylicColor_Menu">
+                        <Theme:Ref.Rules>
+                            <Theme:Rule On="UseAccentColor" Value="SystemAccentDark1/0.7" />
+                            <Theme:Rule On="LightTheme" Value="#F3F3F3/0.7" />
+                            <Theme:Rule Value="#2C2C2C/0.7" />
+                        </Theme:Ref.Rules>
+                    </Theme:Ref>
+                    <!--  Veil painted over that tint. Used by both the tray menu (ShellNotifyIcon)
+                          and SubmenuBorder below. Mirrors AcrylicColor_Menu rule for rule.  -->
+                    <Theme:Ref Key="AcrylicMenuBackground">
+                        <Theme:Ref.Rules>
+                            <Theme:Rule On="HighContrast" Value="Menu" />
+                            <Theme:Rule On="UseAccentColor" Value="SystemAccentDark1/0.36/0.86" />
+                            <Theme:Rule On="LightTheme" Value="#F3F3F3/0.36/0.86" />
+                            <Theme:Rule Value="#2C2C2C/0.36/0.86" />
+                        </Theme:Ref.Rules>
+                    </Theme:Ref>
+                    <!--  Transparent outside high contrast: on Win11 the DWM border drawn on the
+                          rounded popup is the only edge the menus need, and it follows DWM's own
+                          arc rather than the template's undercut radius. High contrast keeps a real
+                          border, because there EnableAcrylic bails early, so the menu gets neither
+                          acrylic nor DWM rounding and would otherwise have no outline at all.
+                          Must use explicit Light=/Dark= keys: a bare value would win over the
+                          HighContrast branch in BrushValueParser and take the border away there
+                          too.  -->
+                    <Theme:Ref Key="AcrylicMenuBorder" Value="Light=Transparent, Dark=Transparent, HighContrast=ControlText" />
                     <Theme:Ref Key="AcrylicColor_Settings" Value="Light=LightChromeWhite/0.6, Dark=ApplicationBackgroundDarkTheme/0.7" />
                     <Theme:Ref Key="AcrylicBackground">
                         <Theme:Ref.Rules>
@@ -699,20 +731,25 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="{x:Type ContextMenu}">
-                            <Border x:Name="Border" RenderTransformOrigin="0.5,0">
+                            <Border x:Name="Border">
+                                <!--  Radius 7, not 8: when this template backs an acrylic menu (the
+                                      tray menu), DWM clips the popup to its own rounded geometry
+                                      (DWMWCP_ROUND), and matching 8 exactly leaves a hairline of
+                                      bare acrylic in the corners. Undercutting by 1px lets DWM's
+                                      antialiased arc define the visible corner. In-window context
+                                      menus share this template but get neither acrylic nor DWM
+                                      rounding, so for them the undercut buys nothing; it is just
+                                      1px tighter, which is why one radius can serve both.  -->
                                 <Border x:Name="ContentBorder"
                                         Padding="4,4"
                                         Background="{TemplateBinding Background}"
                                         BorderBrush="{TemplateBinding BorderBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="8">
+                                        CornerRadius="7">
                                     <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto">
                                         <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
                                     </ScrollViewer>
                                 </Border>
-                                <Border.RenderTransform>
-                                    <ScaleTransform x:Name="MenuScale" ScaleX="1" ScaleY="1" />
-                                </Border.RenderTransform>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="HasDropShadow" Value="True">
@@ -726,33 +763,9 @@
                                         </Setter.Value>
                                     </Setter>
                                 </Trigger>
-                                <EventTrigger RoutedEvent="Loaded">
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <!-- Premium entrance: subtle scale-up + fade -->
-                                            <DoubleAnimation Storyboard.TargetName="MenuScale"
-                                                             Storyboard.TargetProperty="ScaleX"
-                                                             From="0.95" To="1"
-                                                             Duration="0:0:0.12">
-                                                <DoubleAnimation.EasingFunction>
-                                                    <CubicEase EasingMode="EaseOut" />
-                                                </DoubleAnimation.EasingFunction>
-                                            </DoubleAnimation>
-                                            <DoubleAnimation Storyboard.TargetName="MenuScale"
-                                                             Storyboard.TargetProperty="ScaleY"
-                                                             From="0.95" To="1"
-                                                             Duration="0:0:0.12">
-                                                <DoubleAnimation.EasingFunction>
-                                                    <CubicEase EasingMode="EaseOut" />
-                                                </DoubleAnimation.EasingFunction>
-                                            </DoubleAnimation>
-                                            <DoubleAnimation Storyboard.TargetName="ContentBorder"
-                                                             Storyboard.TargetProperty="Opacity"
-                                                             From="0" To="1"
-                                                             Duration="0:0:0.10" />
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </EventTrigger>
+                                <!--  No entrance animation: the acrylic tint is a window-level DWM
+                                      effect that WPF animations cannot drive, so animating only the
+                                      content leaves the bare tint visible for the duration.  -->
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
@@ -856,28 +869,24 @@
                                            HorizontalOffset="2"
                                            IsOpen="{TemplateBinding IsSubmenuOpen}"
                                            Placement="Right"
-                                           PopupAnimation="None">
+                                           PopupAnimation="Fade">
 
+                                        <!--  Radius 7 for the same reason as ContentBorder above.  -->
                                         <Border x:Name="SubmenuBorder"
-                                                Theme:Brush.Background="Theme=#18181A/0.36/0.86, HighContrast=Menu"
-                                                Theme:Brush.BorderBrush="Theme=White/0.28/0.28, HighContrast=ControlText"
+                                                Theme:Brush.Background="AcrylicMenuBackground"
+                                                Theme:Brush.BorderBrush="AcrylicMenuBorder"
                                                 BorderThickness="1"
-                                                CornerRadius="8"
-                                                RenderTransformOrigin="0,0"
+                                                CornerRadius="7"
                                                 SnapsToDevicePixels="True">
-                                            <Border.Effect>
-                                                <DropShadowEffect BlurRadius="16"
-                                                                  Opacity="0.3"
-                                                                  ShadowDepth="4" />
-                                            </Border.Effect>
-                                            <Border.RenderTransform>
-                                                <ScaleTransform x:Name="SubmenuScale" ScaleX="1" ScaleY="1" />
-                                            </Border.RenderTransform>
+                                            <!--  No DropShadowEffect: the popup HWND is sized from
+                                                  this border's DesiredSize, which does not include
+                                                  an effect's bleed, so the shadow was clipped away
+                                                  while still forcing an offscreen render pass.  -->
                                             <Border Padding="4,4"
                                                     Background="Transparent"
                                                     BorderBrush="Transparent"
                                                     BorderThickness="0"
-                                                    CornerRadius="8">
+                                                    CornerRadius="7">
                                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                                     <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
                                                 </ScrollViewer>
@@ -934,35 +943,8 @@
                                 <Trigger Property="Role" Value="SubmenuHeader">
                                     <Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible" />
                                 </Trigger>
-                                <!-- Submenu entrance animation -->
-                                <Trigger Property="IsSubmenuOpen" Value="True">
-                                    <Trigger.EnterActions>
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetName="SubmenuScale"
-                                                                 Storyboard.TargetProperty="ScaleX"
-                                                                 From="0.96" To="1"
-                                                                 Duration="0:0:0.10">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <CubicEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <DoubleAnimation Storyboard.TargetName="SubmenuScale"
-                                                                 Storyboard.TargetProperty="ScaleY"
-                                                                 From="0.96" To="1"
-                                                                 Duration="0:0:0.10">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <CubicEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <DoubleAnimation Storyboard.TargetName="SubmenuBorder"
-                                                                 Storyboard.TargetProperty="Opacity"
-                                                                 From="0" To="1"
-                                                                 Duration="0:0:0.08" />
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </Trigger.EnterActions>
-                                </Trigger>
+                                <!--  No submenu entrance animation, same reason as the ContextMenu
+                                      template above.  -->
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
