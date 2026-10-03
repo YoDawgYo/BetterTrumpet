@@ -1,3 +1,4 @@
+using EarTrumpet.DataModel;
 using EarTrumpet.Extensions;
 using EarTrumpet.Interop;
 using EarTrumpet.Interop.Helpers;
@@ -411,6 +412,9 @@ namespace EarTrumpet.UI.Views
                 case "showQuickTrumpetConfirmation":
                     App.Settings.ShowQuickTrumpetConfirmation = valueElement.GetBoolean();
                     break;
+                case "quickTrumpetNotificationSeconds":
+                    App.Settings.QuickTrumpetNotificationSeconds = valueElement.GetInt32();
+                    break;
                 case "mediaPopupEnabled":
                     App.Settings.MediaPopupEnabled = valueElement.GetBoolean();
                     break;
@@ -518,12 +522,43 @@ namespace EarTrumpet.UI.Views
                     App.Settings.UnhideAllDevices();
                     break;
                 case "profileSelect" when profiles != null:
-                    profiles.SelectedProfile = profiles.Profiles.ElementAtOrDefault(GetInt32(message, "index"));
+                    SelectProfile(profiles, message);
                     break;
                 case "profileCapture" when profiles != null:
-                    profiles.NewProfileName = GetString(message, "name");
-                    profiles.CaptureAllDevices = GetBoolean(message, "allDevices");
-                    profiles.SaveCurrentCommand.Execute(null);
+                    profiles.CaptureProfile(GetString(message, "name"), ReadCaptureOptions(message));
+                    break;
+                case "profileUpdateFromCurrent" when profiles != null:
+                    profiles.UpdateProfileFromCurrent(ResolveProfile(profiles, message));
+                    break;
+                case "profileSetInclude" when profiles != null:
+                    profiles.SetProfileIncludes(ResolveProfile(profiles, message),
+                        GetOptionalBoolean(message, "deviceVolumes"),
+                        GetOptionalBoolean(message, "appVolumes"),
+                        GetOptionalBoolean(message, "routeApps"));
+                    break;
+                case "profileDeviceUpdate" when profiles != null:
+                    profiles.SetProfileDeviceEntry(ResolveProfile(profiles, message), GetString(message, "key"),
+                        GetOptionalInt32(message, "volume"), GetOptionalBoolean(message, "muted"));
+                    break;
+                case "profileDeviceRemove" when profiles != null:
+                    profiles.RemoveProfileDeviceEntry(ResolveProfile(profiles, message), GetString(message, "key"));
+                    break;
+                case "profileDeviceAdd" when profiles != null:
+                    profiles.AddProfileDeviceEntry(ResolveProfile(profiles, message), GetString(message, "key"));
+                    break;
+                case "profileAppUpdate" when profiles != null:
+                    profiles.SetProfileAppEntry(ResolveProfile(profiles, message), GetString(message, "key"),
+                        GetOptionalInt32(message, "volume"), GetOptionalBoolean(message, "muted"));
+                    break;
+                case "profileAppRemove" when profiles != null:
+                    profiles.RemoveProfileAppEntry(ResolveProfile(profiles, message), GetString(message, "key"));
+                    break;
+                case "profileSetDefault" when profiles != null:
+                    var role = GetInt32(message, "role");
+                    if (Enum.IsDefined(typeof(VolumeProfileService.DefaultDeviceRole), role))
+                    {
+                        profiles.SetProfileDefaultDevice(ResolveProfile(profiles, message), (VolumeProfileService.DefaultDeviceRole)role, GetString(message, "deviceId"));
+                    }
                     break;
                 // Web actions never raise WPF MessageBoxes: applying is
                 // immediate and destructive actions are confirmed inline by
@@ -666,6 +701,11 @@ namespace EarTrumpet.UI.Views
             var updates = GetPage<EarTrumpetUpdatesPageViewModel>();
             var about = GetPage<EarTrumpetAboutPageViewModel>();
 
+            // Hotkeys, the CLI and settings import write presets through their own
+            // service instances; pick their changes up before describing the list.
+            profiles?.RefreshProfiles();
+            var audio = BuildAudioState();
+
             var categories = _viewModel.Categories.Select(category => new
             {
                 category.Title,
@@ -780,6 +820,31 @@ namespace EarTrumpet.UI.Views
                     ["empty"] = R("WebSettingsEmpty"), ["seconds"] = R("WebSettingsSeconds"),
                     ["profileShortcut"] = R("SettingsQuickTrumpetShortcut"),
                     ["profileShortcutDescription"] = R("SettingsQuickTrumpetShortcutDesc"),
+                    ["presetsDescription"] = R("WebSettingsQtPresetsDesc"),
+                    ["newPreset"] = R("WebSettingsQtNewPreset"), ["newPresetDesc"] = R("WebSettingsQtNewPresetDesc"),
+                    ["whatToSave"] = R("WebSettingsQtWhatToSave"), ["nothingSelected"] = R("WebSettingsQtNothingSelected"),
+                    ["includeDefaults"] = R("WebSettingsQtIncludeDefaults"), ["includeDefaultsDesc"] = R("WebSettingsQtIncludeDefaultsDesc"),
+                    ["includeDevices"] = R("WebSettingsQtIncludeDevices"), ["includeDevicesDesc"] = R("WebSettingsQtIncludeDevicesDesc"),
+                    ["includeApps"] = R("WebSettingsQtIncludeApps"), ["includeAppsDesc"] = R("WebSettingsQtIncludeAppsDesc"),
+                    ["appsOpenFormat"] = R("WebSettingsQtAppsOpenFormat"), ["devicesCheckedFormat"] = R("WebSettingsQtDevicesCheckedFormat"),
+                    ["choose"] = R("WebSettingsQtChoose"),
+                    ["rolePlayback"] = R("QuickTrumpetRolePlayback"), ["rolePlaybackComms"] = R("QuickTrumpetRolePlaybackComms"),
+                    ["roleRecording"] = R("QuickTrumpetRoleRecording"), ["roleRecordingComms"] = R("QuickTrumpetRoleRecordingComms"),
+                    ["dontChange"] = R("WebSettingsQtDontChange"), ["notConnected"] = R("WebSettingsQtNotConnected"),
+                    ["noDevice"] = R("WebSettingsQtNoDevice"),
+                    ["routeApps"] = R("WebSettingsQtRouteApps"), ["routeAppsDesc"] = R("WebSettingsQtRouteAppsDesc"),
+                    ["updateFromCurrent"] = R("WebSettingsQtUpdateFromCurrent"), ["updateConfirm"] = R("WebSettingsQtUpdateConfirm"),
+                    ["updateFromCurrentDesc"] = R("WebSettingsQtUpdateFromCurrentDesc"),
+                    ["updated"] = R("WebSettingsQtUpdated"),
+                    ["addDevice"] = R("WebSettingsQtAddDevice"), ["removeEntry"] = R("WebSettingsQtRemoveEntry"),
+                    ["muteEntry"] = R("WebSettingsQtMuteEntry"),
+                    ["noDeviceEntries"] = R("WebSettingsQtNoDeviceEntries"), ["noAppEntries"] = R("WebSettingsQtNoAppEntries"),
+                    ["lastApplied"] = R("WebSettingsQtLastApplied"),
+                    ["cycleTitle"] = R("WebSettingsQtCycleTitle"), ["cycleDesc"] = R("WebSettingsQtCycleDesc"),
+                    ["nextPreset"] = R("SettingsQuickTrumpetNextHotkey"), ["previousPreset"] = R("SettingsQuickTrumpetPreviousHotkey"),
+                    ["qtNotification"] = R("WebSettingsQtNotificationTitle"),
+                    ["notificationDuration"] = R("WebSettingsQtNotificationDuration"),
+                    ["notificationDurationDesc"] = R("WebSettingsQtNotificationDurationDesc"),
                     ["changeFolder"] = R("FolderVolumeRulesBrowseButtonText"),
                     ["deleteTheme"] = R("SettingsDeleteTitle"),
                     ["updateChannel0"] = R("SettingsUpdateChannelAllDesc"),
@@ -817,6 +882,7 @@ namespace EarTrumpet.UI.Views
                     focusLostFadeDurationMs = App.Settings.FocusLostFadeDurationMs,
                     focusLostSelectedAppsOnly = App.Settings.FocusLostSelectedAppsOnly,
                     showQuickTrumpetConfirmation = App.Settings.ShowQuickTrumpetConfirmation,
+                    quickTrumpetNotificationSeconds = App.Settings.QuickTrumpetNotificationSeconds,
                     mediaPopupEnabled = App.Settings.MediaPopupEnabled,
                     mediaPopupHoverDelay = App.Settings.MediaPopupHoverDelay,
                     showWhenPaused = !App.Settings.MediaPopupShowOnlyWhenPlaying,
@@ -856,15 +922,8 @@ namespace EarTrumpet.UI.Views
                         isDefault = string.Equals(device.Id, GetDefaultDeviceId(), StringComparison.OrdinalIgnoreCase),
                         value = App.Settings.GetDeviceHotkey(device.Id)?.ToString()
                     }).ToArray() ?? Array.Empty<object>(),
-                    profiles = profiles?.Profiles.Select((profile, index) => new
-                    {
-                        index,
-                        profile.Name,
-                        slug = string.IsNullOrWhiteSpace(profile.Slug) ? EarTrumpet.DataModel.VolumeProfileService.ToSlug(profile.Name) : profile.Slug,
-                        details = BuildProfileDetails(profile),
-                        profile.ApplyAppsOnly,
-                        hotkey = profile.Hotkey?.ToString() ?? string.Empty,
-                    }).Cast<object>() ?? Enumerable.Empty<object>(),
+                    profiles = profiles?.Profiles.Select((profile, index) => BuildProfile(profile, index, audio)).ToArray() ?? Array.Empty<object>(),
+                    audio = audio.Payload,
                     selectedProfileIndex = profiles?.SelectedProfile == null ? -1 : profiles.Profiles.IndexOf(profiles.SelectedProfile),
                     appRules = App.Settings.GetAppRules().Select(rule => new { rule.ExeName, rule.DisplayName, rule.HardMuted, focusLost = rule.FocusLostEnabled, volumeMode = (int)rule.VolumeMode, rule.VolumePercent }),
                     folderRules = App.Settings.GetFolderVolumeRules().Select(rule => new { rule.Id, rule.FolderPath, rule.VolumePercent }),
@@ -967,25 +1026,161 @@ namespace EarTrumpet.UI.Views
                 value.GetBoolean();
         }
 
-        private static void SelectProfile(EarTrumpetVolumeProfilesSettingsPageViewModel profiles, JsonElement message)
+        private static int? GetOptionalInt32(JsonElement message, string name)
         {
-            profiles.SelectedProfile = profiles.Profiles.ElementAtOrDefault(GetInt32(message, "index"));
+            return message.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.GetInt32() : (int?)null;
         }
 
-        private static string BuildProfileDetails(EarTrumpet.DataModel.VolumeProfileService.VolumeProfile profile)
+        private static bool? GetOptionalBoolean(JsonElement message, string name)
         {
-            var deviceCount = profile.Devices?.Count ?? 0;
-            var appCount = profile.Devices?.Sum(device => device.Apps?.Count ?? 0) ?? 0;
-            var deviceNames = profile.Devices?
-                .Select(device => device.DisplayName)
-                .Where(name => !string.IsNullOrWhiteSpace(name))
-                .ToList() ?? new System.Collections.Generic.List<string>();
-            string devicesLabel;
-            if (deviceNames.Count == 0) devicesLabel = $"{deviceCount} device(s)";
-            else if (deviceNames.Count == 1) devicesLabel = deviceNames[0];
-            else if (deviceNames.Count == 2) devicesLabel = $"{deviceNames[0]}, {deviceNames[1]}";
-            else devicesLabel = $"{deviceNames[0]} +{deviceNames.Count - 1}";
-            return $"{devicesLabel} · {appCount} app(s)";
+            return message.TryGetProperty(name, out var value) && (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+                ? value.GetBoolean()
+                : (bool?)null;
+        }
+
+        private static List<string> GetStringArray(JsonElement message, string name)
+        {
+            if (!message.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Array) return null;
+            return value.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).ToList();
+        }
+
+        private static VolumeProfileService.CaptureOptions ReadCaptureOptions(JsonElement message)
+        {
+            // Older pages only sent `allDevices`; keep honoring it.
+            if (!message.TryGetProperty("includeDeviceVolumes", out _))
+            {
+                return new VolumeProfileService.CaptureOptions
+                {
+                    AllDevices = GetBoolean(message, "allDevices"),
+                    RouteApps = true,
+                };
+            }
+
+            var includeDevices = GetBoolean(message, "includeDeviceVolumes");
+            var roles = new List<VolumeProfileService.DefaultDeviceRole>();
+            if (message.TryGetProperty("defaultRoles", out var rolesElement) && rolesElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in rolesElement.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.Number && Enum.IsDefined(typeof(VolumeProfileService.DefaultDeviceRole), item.GetInt32()))
+                    {
+                        roles.Add((VolumeProfileService.DefaultDeviceRole)item.GetInt32());
+                    }
+                }
+            }
+
+            return new VolumeProfileService.CaptureOptions
+            {
+                IncludeDeviceVolumes = includeDevices,
+                DeviceIds = includeDevices ? (GetStringArray(message, "deviceIds") ?? new List<string>()) : new List<string>(),
+                IncludeAppVolumes = GetBoolean(message, "includeAppVolumes"),
+                RouteApps = GetBoolean(message, "routeApps"),
+                DefaultRoles = roles,
+            };
+        }
+
+        private static VolumeProfileService.VolumeProfile ResolveProfile(EarTrumpetVolumeProfilesSettingsPageViewModel profiles, JsonElement message)
+        {
+            var id = GetString(message, "id");
+            var profile = string.IsNullOrWhiteSpace(id) ? null : profiles.FindProfile(id);
+            return profile ?? profiles.Profiles.ElementAtOrDefault(GetInt32(message, "index"));
+        }
+
+        private static void SelectProfile(EarTrumpetVolumeProfilesSettingsPageViewModel profiles, JsonElement message)
+        {
+            profiles.SelectedProfile = ResolveProfile(profiles, message);
+        }
+
+        /// <summary>Live audio state the QuickTrumpet page needs to capture and edit presets.</summary>
+        private sealed class AudioState
+        {
+            public HashSet<string> PlaybackIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public HashSet<string> RecordingIds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public object Payload { get; set; }
+        }
+
+        private static AudioState BuildAudioState()
+        {
+            var state = new AudioState();
+            var collection = (Application.Current as App)?.CollectionViewModel;
+            var playbackEndpoints = AudioEndpointHelper.GetActiveEndpoints(capture: false);
+            var recordingEndpoints = AudioEndpointHelper.GetActiveEndpoints(capture: true);
+            foreach (var endpoint in playbackEndpoints) state.PlaybackIds.Add(endpoint.Id);
+            foreach (var endpoint in recordingEndpoints) state.RecordingIds.Add(endpoint.Id);
+
+            var devices = collection?.AllDevices.ToList() ?? new List<DeviceViewModel>();
+            state.Payload = new
+            {
+                // Output devices with a volume the preset can save.
+                devices = devices.Select(device => new
+                {
+                    id = device.Id,
+                    name = device.DisplayName,
+                    volume = device.Volume,
+                    muted = device.IsMuted,
+                    isDefault = string.Equals(device.Id, collection?.Default?.Id, StringComparison.OrdinalIgnoreCase),
+                }).ToArray(),
+                // Endpoints a default-device slot can point to.
+                playbackEndpoints = playbackEndpoints.Select(endpoint => new { id = endpoint.Id, name = endpoint.Name }).ToArray(),
+                recordingEndpoints = recordingEndpoints.Select(endpoint => new { id = endpoint.Id, name = endpoint.Name }).ToArray(),
+                defaults = VolumeProfileService.AllRoles.Select(role =>
+                {
+                    var current = VolumeProfileService.ReadCurrentDefault(role);
+                    return new { role = (int)role, deviceId = current?.DeviceId ?? string.Empty, name = current?.DisplayName ?? string.Empty };
+                }).ToArray(),
+                appCount = QuickTrumpetSummary.CountDistinctApps(devices.SelectMany(device => device.Apps).Select(app => new VolumeProfileService.AppVolumeEntry { ExeName = app.ExeName, AppId = app.AppId })),
+            };
+            return state;
+        }
+
+        private static object BuildProfile(VolumeProfileService.VolumeProfile profile, int index, AudioState audio)
+        {
+            return new
+            {
+                index,
+                id = profile.Id,
+                name = profile.Name,
+                slug = VolumeProfileService.GetSlug(profile),
+                details = QuickTrumpetSummary.DescribeProfile(profile),
+                applyAppsOnly = profile.ApplyAppsOnly,
+                includeDeviceVolumes = profile.IncludeDeviceVolumes,
+                includeAppVolumes = profile.IncludeAppVolumes,
+                routeApps = profile.RouteApps,
+                isLastApplied = !string.IsNullOrEmpty(profile.Id) && string.Equals(profile.Id, App.Settings.QuickTrumpetLastAppliedId, StringComparison.OrdinalIgnoreCase),
+                hotkey = profile.Hotkey?.ToString() ?? string.Empty,
+                defaults = VolumeProfileService.AllRoles.Select(role =>
+                {
+                    var entry = profile.DefaultDevices?.Get(role);
+                    var known = VolumeProfileService.IsCaptureRole(role) ? audio.RecordingIds : audio.PlaybackIds;
+                    return new
+                    {
+                        role = (int)role,
+                        deviceId = entry?.DeviceId ?? string.Empty,
+                        name = entry?.DisplayName ?? string.Empty,
+                        missing = entry != null && !known.Contains(entry.DeviceId),
+                    };
+                }).ToArray(),
+                devices = profile.VolumeDevices.Select(device => new
+                {
+                    key = device.DeviceId ?? string.Empty,
+                    name = device.DisplayName ?? device.DeviceId ?? string.Empty,
+                    volume = device.Volume,
+                    muted = device.IsMuted,
+                    missing = !audio.PlaybackIds.Contains(device.DeviceId ?? string.Empty),
+                }).ToArray(),
+                apps = profile.AllApps
+                    .GroupBy(VolumeProfileService.GetAppKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
+                    .Select(app => new
+                    {
+                        key = VolumeProfileService.GetAppKey(app),
+                        name = string.IsNullOrWhiteSpace(app.DisplayName) ? app.ExeName ?? string.Empty : app.DisplayName,
+                        exeName = app.ExeName ?? string.Empty,
+                        deviceName = app.DeviceDisplayName ?? string.Empty,
+                        volume = app.Volume,
+                        muted = app.IsMuted,
+                    }).ToArray(),
+            };
         }
 
         private static string ToHex(System.Windows.Media.Color color)
@@ -1007,6 +1202,8 @@ namespace EarTrumpet.UI.Views
                 new { id = "volumeUp", label = R("SettingsAbsoluteVolumeUpText"), description = R("WebSettingsHotkeyVolumeUpDesc"), value = App.Settings.AbsoluteVolumeUpHotkey.ToString() },
                 new { id = "volumeDown", label = R("SettingsAbsoluteVolumeDownText"), description = R("WebSettingsHotkeyVolumeDownDesc"), value = App.Settings.AbsoluteVolumeDownHotkey.ToString() },
                 new { id = "switchDevice", label = R("SettingsSwitchDevice"), description = R("WebSettingsHotkeySwitchDeviceDesc"), value = App.Settings.SwitchDeviceHotkey.ToString() },
+                new { id = "presetNext", label = R("SettingsQuickTrumpetNextHotkey"), description = R("WebSettingsHotkeyNextPresetDesc"), value = App.Settings.QuickTrumpetNextHotkey.ToString() },
+                new { id = "presetPrevious", label = R("SettingsQuickTrumpetPreviousHotkey"), description = R("WebSettingsHotkeyPreviousPresetDesc"), value = App.Settings.QuickTrumpetPreviousHotkey.ToString() },
             };
         }
 
@@ -1053,6 +1250,8 @@ namespace EarTrumpet.UI.Views
                     case "volumeUp": App.Settings.AbsoluteVolumeUpHotkey = hotkey; break;
                     case "volumeDown": App.Settings.AbsoluteVolumeDownHotkey = hotkey; break;
                     case "switchDevice": App.Settings.SwitchDeviceHotkey = hotkey; break;
+                    case "presetNext": App.Settings.QuickTrumpetNextHotkey = hotkey; break;
+                    case "presetPrevious": App.Settings.QuickTrumpetPreviousHotkey = hotkey; break;
                     case string deviceId when deviceId.StartsWith("device:"):
                         var id = deviceId.Substring(7);
                         App.Settings.SetDeviceHotkey(id, hotkey);

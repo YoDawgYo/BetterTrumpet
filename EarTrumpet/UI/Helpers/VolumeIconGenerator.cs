@@ -20,6 +20,7 @@ namespace EarTrumpet.UI.Helpers
         private readonly int _totalFrames;
         private readonly Icon[] _frames;
         private readonly Icon[] _framesLight;
+        private readonly int[] _canonicalFrames;
         private bool _disposed;
 
         // Animation timing
@@ -37,6 +38,7 @@ namespace EarTrumpet.UI.Helpers
             _totalFrames = totalFrames;
             _frames = new Icon[totalFrames];
             _framesLight = new Icon[totalFrames];
+            _canonicalFrames = new int[totalFrames];
 
             GenerateAllFrames();
         }
@@ -50,7 +52,31 @@ namespace EarTrumpet.UI.Helpers
 
                 _frames[i] = GenerateFrame(wave1Opacity, wave2Opacity, false);
                 _framesLight[i] = GenerateFrame(wave1Opacity, wave2Opacity, true);
+
+                // Frames past the end of both wave fades are pixel-identical; remember the
+                // first frame with the same opacities so callers can skip redundant updates.
+                _canonicalFrames[i] = i;
+                for (int j = 0; j < i; j++)
+                {
+                    if (CalculateWaveOpacity(j, WAVE1_START, WAVE1_END) == wave1Opacity &&
+                        CalculateWaveOpacity(j, WAVE2_START, WAVE2_END) == wave2Opacity)
+                    {
+                        _canonicalFrames[i] = j;
+                        break;
+                    }
+                }
             }
+        }
+
+        /// <summary>
+        /// Returns the lowest frame index that renders exactly like <paramref name="frameIndex"/>.
+        /// </summary>
+        public int GetCanonicalFrame(int frameIndex)
+        {
+            if (frameIndex < 0 || frameIndex >= _totalFrames)
+                frameIndex = 0;
+
+            return _canonicalFrames[frameIndex];
         }
 
         private float CalculateWaveOpacity(int frame, int startFrame, int endFrame)

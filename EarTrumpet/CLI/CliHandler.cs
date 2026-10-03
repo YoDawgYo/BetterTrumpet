@@ -181,6 +181,13 @@ namespace EarTrumpet.CLI
                     case "save":
                         return DispatchToUI(() => SaveProfile(args));
 
+                    case "preset-next":
+                        return DispatchToUI(() => CycleProfile(1));
+
+                    case "preset-prev":
+                    case "preset-previous":
+                        return DispatchToUI(() => CycleProfile(-1));
+
                     case "delete":
                         return DeleteProfile(args);
 
@@ -728,14 +735,21 @@ namespace EarTrumpet.CLI
                 if (string.IsNullOrWhiteSpace(json) || json == "[]")
                     return "[]";
 
-                var profiles = JsonConvert.DeserializeObject<List<VolumeProfileService.VolumeProfile>>(json);
-                var result = profiles?.Select(p => new
+                var lastApplied = settings.QuickTrumpetLastAppliedId;
+                var profiles = VolumeProfileService.ParseProfiles(json);
+                var result = profiles.Select(p => new
                 {
                     name = p.Name,
-                    slug = string.IsNullOrWhiteSpace(p.Slug) ? VolumeProfileService.ToSlug(p.Name) : p.Slug,
-                    devices = p.Devices?.Count ?? 0,
-                    apps = p.Devices?.Sum(d => d.Apps?.Count ?? 0) ?? 0,
-                    createdAt = p.CreatedAt
+                    slug = VolumeProfileService.GetSlug(p),
+                    devices = p.VolumeDevices.Count(),
+                    apps = p.AllApps.Count(),
+                    createdAt = p.CreatedAt,
+                    summary = QuickTrumpetSummary.DescribeProfile(p),
+                    includeDeviceVolumes = p.IncludeDeviceVolumes,
+                    includeAppVolumes = p.IncludeAppVolumes,
+                    routeApps = p.RouteApps,
+                    defaults = DescribeDefaults(p),
+                    lastApplied = !string.IsNullOrEmpty(p.Id) && string.Equals(p.Id, lastApplied, StringComparison.OrdinalIgnoreCase)
                 }).ToList();
 
                 return JsonConvert.SerializeObject(result);
@@ -765,18 +779,7 @@ namespace EarTrumpet.CLI
                     return Error($"QuickTrumpet preset not found: {profileName}");
 
                 var result = service.ApplyProfile(profile, collection, _getDeviceManager() as IAudioDeviceManagerWindowsAudio);
-
-                return JsonConvert.SerializeObject(new
-                {
-                    ok = true,
-                    preset = profile.Name,
-                    slug = string.IsNullOrWhiteSpace(profile.Slug) ? VolumeProfileService.ToSlug(profile.Name) : profile.Slug,
-                    devicesApplied = result.DevicesApplied,
-                    appsApplied = result.AppsApplied,
-                    appsMissing = result.AppsMissing,
-                    appsRouted = result.AppsRouted,
-                    warnings = result.Warnings
-                });
+                return DescribeApplyResult(profile, result);
             }
             catch (Exception ex)
             {
@@ -784,17 +787,82 @@ namespace EarTrumpet.CLI
             }
         }
 
+        private string CycleProfile(int direction)
+        {
+            var settings = _getSettings();
+            if (settings == null) return Error("settings not available");
+
+            var collection = _getCollection();
+            if (collection == null) return Error("audio not ready");
+
+            try
+            {
+                var service = new VolumeProfileService(settings);
+                var profile = service.GetCycleTarget(direction);
+                if (profile == null) return Error("no QuickTrumpet presets saved");
+
+                var result = service.ApplyProfile(profile, collection, _getDeviceManager() as IAudioDeviceManagerWindowsAudio);
+                return DescribeApplyResult(profile, result);
+            }
+            catch (Exception ex)
+            {
+                return Error($"failed to apply profile: {ex.Message}");
+            }
+        }
+
+        private static string DescribeApplyResult(VolumeProfileService.VolumeProfile profile, VolumeProfileService.ApplyProfileResult result)
+        {
+            return JsonConvert.SerializeObject(new
+            {
+                ok = true,
+                preset = profile.Name,
+                slug = VolumeProfileService.GetSlug(profile),
+                defaultsApplied = result.DefaultsApplied.Select(d => new { role = RoleKey(d.Role), name = d.DisplayName, id = d.DeviceId }),
+                devicesApplied = result.DevicesApplied,
+                devicesMissing = result.DevicesMissing,
+                appsApplied = result.AppsApplied,
+                appsMissing = result.AppsMissing,
+                appsRouted = result.AppsRouted,
+                summary = QuickTrumpetSummary.DescribeResult(result),
+                warnings = result.Warnings
+            });
+        }
+
+        private static string RoleKey(VolumeProfileService.DefaultDeviceRole role)
+        {
+            switch (role)
+            {
+                case VolumeProfileService.DefaultDeviceRole.Playback: return "output";
+                case VolumeProfileService.DefaultDeviceRole.PlaybackCommunications: return "outputCalls";
+                case VolumeProfileService.DefaultDeviceRole.Recording: return "mic";
+                default: return "micCalls";
+            }
+        }
+
+        private static Dictionary<string, string> DescribeDefaults(VolumeProfileService.VolumeProfile profile)
+        {
+            var result = new Dictionary<string, string>();
+            foreach (var role in VolumeProfileService.AllRoles)
+            {
+                var entry = profile.DefaultDevices?.Get(role);
+                if (entry != null) result[RoleKey(role)] = entry.DisplayName ?? entry.DeviceId;
+            }
+            return result;
+        }
+
+        private static readonly string[] SaveFlags = { "--all-devices", "--apps-only", "--defaults", "--no-apps", "--no-route" };
+        private const string SaveUsage = "usage: save NAME [--all-devices] [--apps-only] [--defaults] [--no-apps] [--no-route]";
+
         private string SaveProfile(List<string> args)
         {
-            if (args.Count == 0) return Error("usage: save NAME [--all-devices] [--apps-only]");
+            if (args.Count == 0) return Error(SaveUsage);
 
-            var captureAllDevices = args.Any(a => string.Equals(a, "--all-devices", StringComparison.OrdinalIgnoreCase));
-            var applyAppsOnly = args.Any(a => string.Equals(a, "--apps-only", StringComparison.OrdinalIgnoreCase));
-            var nameParts = args.Where(a =>
-                !string.Equals(a, "--all-devices", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(a, "--apps-only", StringComparison.OrdinalIgnoreCase)).ToList();
+            bool HasFlag(string flag) => args.Any(a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+            var captureAllDevices = HasFlag("--all-devices");
+            var applyAppsOnly = HasFlag("--apps-only");
+            var nameParts = args.Where(a => !SaveFlags.Any(flag => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase))).ToList();
             var profileName = string.Join(" ", nameParts).Trim();
-            if (string.IsNullOrWhiteSpace(profileName)) return Error("usage: save NAME [--all-devices] [--apps-only]");
+            if (string.IsNullOrWhiteSpace(profileName)) return Error(SaveUsage);
 
             var settings = _getSettings();
             if (settings == null) return Error("settings not available");
@@ -808,6 +876,15 @@ namespace EarTrumpet.CLI
                 collection,
                 captureAllDevices ? VolumeProfileService.CaptureScope.AllDevices : VolumeProfileService.CaptureScope.CurrentDevice);
             profile.ApplyAppsOnly = applyAppsOnly;
+            if (HasFlag("--no-apps")) profile.IncludeAppVolumes = false;
+            if (HasFlag("--no-route")) profile.RouteApps = false;
+            if (HasFlag("--defaults"))
+            {
+                foreach (var role in VolumeProfileService.AllRoles)
+                {
+                    profile.DefaultDevices.Set(role, VolumeProfileService.ReadCurrentDefault(role));
+                }
+            }
             service.SaveProfile(profile);
 
             return JsonConvert.SerializeObject(new
@@ -817,8 +894,12 @@ namespace EarTrumpet.CLI
                 slug = profile.Slug,
                 captureScope = profile.CaptureScope.ToString(),
                 applyAppsOnly = profile.ApplyAppsOnly,
-                devices = profile.Devices?.Count ?? 0,
-                apps = profile.Devices?.Sum(d => d.Apps?.Count ?? 0) ?? 0
+                includeAppVolumes = profile.IncludeAppVolumes,
+                routeApps = profile.RouteApps,
+                defaults = DescribeDefaults(profile),
+                devices = profile.VolumeDevices.Count(),
+                apps = profile.AllApps.Count(),
+                summary = QuickTrumpetSummary.DescribeProfile(profile)
             });
         }
 
@@ -1421,6 +1502,9 @@ namespace EarTrumpet.CLI
                 case "apply":
                 case "apply-profile":
                 case "save":
+                case "preset-next":
+                case "preset-prev":
+                case "preset-previous":
                 case "delete":
                 case "rule-preview":
                 case "rule-apply":
@@ -1533,6 +1617,8 @@ namespace EarTrumpet.CLI
             if (string.Equals(args[0], "load", StringComparison.OrdinalIgnoreCase) || string.Equals(args[0], "apply", StringComparison.OrdinalIgnoreCase)) return new[] { "apply" }.Concat(args.Skip(1)).ToList();
             if (string.Equals(args[0], "save", StringComparison.OrdinalIgnoreCase)) return new[] { "save" }.Concat(args.Skip(1)).ToList();
             if (string.Equals(args[0], "delete", StringComparison.OrdinalIgnoreCase)) return new[] { "delete" }.Concat(args.Skip(1)).ToList();
+            if (args.Count == 1 && string.Equals(args[0], "next", StringComparison.OrdinalIgnoreCase)) return new List<string> { "preset-next" };
+            if (args.Count == 1 && (string.Equals(args[0], "prev", StringComparison.OrdinalIgnoreCase) || string.Equals(args[0], "previous", StringComparison.OrdinalIgnoreCase))) return new List<string> { "preset-prev" };
             return new[] { "apply" }.Concat(args).ToList();
         }
 

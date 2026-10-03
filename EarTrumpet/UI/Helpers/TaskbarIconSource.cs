@@ -39,6 +39,9 @@ namespace EarTrumpet.UI.Helpers
         private DispatcherTimer _animationTimer;
         private int _currentFrame;
         private bool _isAnimating;
+        private bool _animationIsLightTheme;
+        private int _lastAnimationFrameShown = -1;
+        private bool _lastAnimationFrameIsLight;
 
         public TaskbarIconSource(DeviceCollectionViewModel collection, AppSettings settings)
         {
@@ -133,6 +136,8 @@ namespace EarTrumpet.UI.Helpers
 
             _isAnimating = true;
             _currentFrame = 0;
+            _lastAnimationFrameShown = -1;
+            _animationIsLightTheme = SystemSettings.IsSystemLightTheme;
             _animationTimer?.Start();
             Trace.WriteLine("TaskbarIconSource: Animation started");
         }
@@ -156,15 +161,33 @@ namespace EarTrumpet.UI.Helpers
 
                 _currentFrame = (_currentFrame + 1) % _volumeIconGenerator.FrameCount;
 
-                // Get frame based on current system theme
-                bool isLightTheme = SystemSettings.IsSystemLightTheme;
-                var frame = _volumeIconGenerator.GetFrame(_currentFrame, isLightTheme);
+                // Get frame based on current system theme. The theme is a registry read, so it is
+                // sampled once per animation cycle rather than on every 50 ms frame.
+                if (_currentFrame == 0)
+                {
+                    _animationIsLightTheme = SystemSettings.IsSystemLightTheme;
+                }
+
+                // Several frames of the cycle are identical (waves fully drawn); pushing them to
+                // the shell again would cost an icon copy plus a cross-process NIM_MODIFY for
+                // nothing (GitHub #74).
+                var canonicalFrame = _volumeIconGenerator.GetCanonicalFrame(_currentFrame);
+                if (Current != null &&
+                    canonicalFrame == _lastAnimationFrameShown &&
+                    _animationIsLightTheme == _lastAnimationFrameIsLight)
+                {
+                    return;
+                }
+
+                var frame = _volumeIconGenerator.GetFrame(_currentFrame, _animationIsLightTheme);
 
                 if (frame != null)
                 {
                     var oldIcon = Current;
 
                     Current = frame;
+                    _lastAnimationFrameShown = canonicalFrame;
+                    _lastAnimationFrameIsLight = _animationIsLightTheme;
 
                     // Notify the shell
                     Changed?.Invoke(this);

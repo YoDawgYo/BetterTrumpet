@@ -15,6 +15,7 @@ export type SettingKey =
   | "focusLostFadeDurationMs"
   | "focusLostSelectedAppsOnly"
   | "showQuickTrumpetConfirmation"
+  | "quickTrumpetNotificationSeconds"
   | "mediaPopupEnabled"
   | "mediaPopupHoverDelay"
   | "showWhenPaused"
@@ -79,13 +80,71 @@ export interface DeviceHotkeySetting extends HotkeySetting {
   isDefault: boolean;
 }
 
+/** Default-device slot roles: 0 output, 1 calls output, 2 microphone, 3 calls microphone. */
+export type PresetRole = 0 | 1 | 2 | 3;
+
+export interface PresetDefaultSlot {
+  role: PresetRole;
+  /** Empty when the preset leaves this default alone. */
+  deviceId: string;
+  name: string;
+  missing: boolean;
+}
+
+export interface PresetDeviceEntry {
+  key: string;
+  name: string;
+  volume: number;
+  muted: boolean;
+  missing: boolean;
+}
+
+export interface PresetAppEntry {
+  key: string;
+  name: string;
+  exeName: string;
+  deviceName: string;
+  volume: number;
+  muted: boolean;
+}
+
 export interface VolumeProfile {
   index: number;
+  id: string;
   name: string;
   slug: string;
   details: string;
   applyAppsOnly: boolean;
+  includeDeviceVolumes: boolean;
+  includeAppVolumes: boolean;
+  routeApps: boolean;
+  isLastApplied: boolean;
   hotkey: string;
+  defaults: PresetDefaultSlot[];
+  devices: PresetDeviceEntry[];
+  apps: PresetAppEntry[];
+}
+
+export interface AudioDeviceInfo {
+  id: string;
+  name: string;
+  volume: number;
+  muted: boolean;
+  isDefault: boolean;
+}
+
+export interface AudioEndpointInfo {
+  id: string;
+  name: string;
+}
+
+/** Live audio state the QuickTrumpet page captures from and edits against. */
+export interface AudioState {
+  devices: AudioDeviceInfo[];
+  playbackEndpoints: AudioEndpointInfo[];
+  recordingEndpoints: AudioEndpointInfo[];
+  defaults: { role: PresetRole; deviceId: string; name: string }[];
+  appCount: number;
 }
 
 export interface AppRule {
@@ -117,6 +176,7 @@ export interface SettingsCollections {
   deviceHotkeys: DeviceHotkeySetting[];
   profiles: VolumeProfile[];
   selectedProfileIndex: number;
+  audio?: AudioState;
   appRules: AppRule[];
   folderRules: FolderRule[];
   themes: ThemePreset[];

@@ -201,6 +201,268 @@
   line-height: 1.5;
 }
 
+/* --- QuickTrumpet: capture form --------------------------------------- */
+
+.bt-overline.bt-overline {
+  display: block;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(244, 247, 245, 0.5);
+}
+
+.bt-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.bt-capture-label.bt-capture-label {
+  padding: 4px 24px 6px;
+}
+
+.bt-include + .bt-include {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bt-include-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 24px 6px 16px;
+}
+
+.bt-include-head > .fui-Checkbox {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bt-include-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.bt-include-desc.bt-include-desc {
+  color: rgba(244, 247, 245, 0.6);
+  line-height: 1.45;
+}
+
+.bt-include-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.bt-include-sub {
+  padding: 0 24px 8px 44px;
+}
+
+.bt-choose-chevron {
+  transition: transform 200ms cubic-bezier(.33, 1, .68, 1);
+}
+
+.bt-choose-chevron-open {
+  transform: rotate(180deg);
+}
+
+/* Option lists sit under their checkbox, indented to its label. */
+.bt-checklist {
+  display: grid;
+  gap: 2px;
+  margin: 0 24px 10px 44px;
+  padding: 4px 4px 4px 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bt-check-item.bt-check-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.bt-check-item .fui-Checkbox__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bt-check-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bt-check-role {
+  flex: 0 0 auto;
+  min-width: 132px;
+  color: rgba(244, 247, 245, 0.6);
+}
+
+.bt-check-name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.bt-check-meta {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 12px;
+  color: rgba(244, 247, 245, 0.55);
+}
+
+.bt-capture-hint.bt-capture-hint {
+  display: block;
+  padding: 2px 24px 10px;
+  color: rgba(244, 247, 245, 0.62);
+}
+
+/* --- QuickTrumpet: preset contents ------------------------------------ */
+
+.bt-group + .bt-group,
+.bt-group.bt-group + .bt-preset-actions {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.bt-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 16px 2px;
+}
+
+.bt-group-body {
+  transition: opacity 160ms cubic-bezier(.2, 0, 0, 1);
+}
+
+/* Excluded parts stay editable but read as "not applied". */
+.bt-group-off {
+  opacity: 0.5;
+}
+
+.bt-group-empty.bt-group-empty {
+  display: block;
+  padding: 4px 16px 12px;
+  color: rgba(244, 247, 245, 0.55);
+}
+
+.bt-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 4px 12px 4px 16px;
+}
+
+.bt-entry.bt-entry-slot,
+.bt-entry.bt-entry-option {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-right: 16px;
+}
+
+.bt-entry.bt-entry-add {
+  grid-template-columns: auto;
+  justify-content: start;
+  padding-bottom: 10px;
+}
+
+.bt-entry.bt-entry-option {
+  border-top: 1px dashed rgba(255, 255, 255, 0.07);
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+
+.bt-entry-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.bt-entry-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bt-entry-range.bt-entry-range {
+  width: 200px;
+  max-width: 100%;
+}
+
+.bt-slot-select.bt-slot-select {
+  max-width: 260px;
+  min-height: 34px;
+}
+
+.bt-chip-quiet.bt-chip-quiet {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.bt-mute.bt-mute,
+.bt-entry-remove.bt-entry-remove {
+  min-width: 0;
+  color: rgba(244, 247, 245, 0.55);
+}
+
+.bt-mute.bt-mute-on,
+.bt-mute.bt-mute-on:hover {
+  color: #b196f1;
+  background-color: rgba(155, 123, 234, 0.14);
+}
+
+.bt-mute.bt-mute:focus-visible,
+.bt-entry-remove.bt-entry-remove:focus-visible {
+  outline: 2px solid #9b7bea;
+  outline-offset: 1px;
+}
+
+.bt-preset-actions-start {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Two-step overwrite (not a deletion): violet instead of red when armed. */
+.bt-confirm.bt-confirm {
+  min-width: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+  border: 1px solid transparent;
+  transition: background-color 160ms cubic-bezier(.2, 0, 0, 1), border-color 160ms cubic-bezier(.2, 0, 0, 1), color 160ms cubic-bezier(.2, 0, 0, 1);
+}
+
+.bt-confirm.bt-confirm-armed,
+.bt-confirm.bt-confirm-armed:hover,
+.bt-confirm.bt-confirm-armed:hover:active {
+  color: #e6dcff;
+  background-color: rgba(155, 123, 234, 0.2);
+  border-color: rgba(155, 123, 234, 0.5);
+}
+
+@media (max-width: 680px) {
+  .bt-entry {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .bt-entry-range.bt-entry-range {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .bt-check-role {
+    min-width: 0;
+  }
+}
+
 /* --- Appearance: presets ----------------------------------------------- */
 
 /* popLayout pops exiting chips out of flow; they position against this. */
@@ -436,6 +698,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .bt-confirm.bt-confirm,
+  .bt-choose-chevron,
+  .bt-group-body,
   .bt-danger.bt-danger,
   .bt-hotkey.bt-hotkey-empty,
   .bt-hex-input,

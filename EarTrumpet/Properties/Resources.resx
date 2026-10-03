@@ -939,7 +939,7 @@ Open [https://eartrumpet.app/jmp/fixfonts] now?</value>
     <value>QuickTrumpet</value>
   </data>
   <data name="QuickTrumpetSettingsPageSubtitle" xml:space="preserve">
-    <value>Save and apply audio presets from BetterTrumpet, hotkeys, or Raycast.</value>
+    <value>Switch default devices and volumes in one go, from here, a shortcut, Raycast or the bt CLI.</value>
   </data>
   <data name="UpdatesSettingsPageText" xml:space="preserve">
     <value>Updates</value>
@@ -1384,7 +1384,7 @@ Open [https://eartrumpet.app/jmp/fixfonts] now?</value>
     <value>{0} applied. {1} app(s), {2} device(s).</value>
   </data>
   <data name="SettingsQuickTrumpetConfirmation" xml:space="preserve">
-    <value>Show confirmation when a preset is applied</value>
+    <value>Show a confirmation when a preset is applied</value>
   </data>
   <data name="SettingsQuickTrumpetAllDevices" xml:space="preserve">
     <value>Include all devices in this preset</value>
@@ -2243,5 +2243,167 @@ Details: {0}</value>
   </data>
   <data name="WebSettingsRequiresAutoCheck" xml:space="preserve">
     <value>Requires automatic checks</value>
+  </data>
+  <data name="QuickTrumpetToastTitleFormat" xml:space="preserve">
+    <value>“{0}” applied</value>
+  </data>
+  <data name="QuickTrumpetSummaryEmpty" xml:space="preserve">
+    <value>Empty preset</value>
+  </data>
+  <data name="QuickTrumpetSummaryNothing" xml:space="preserve">
+    <value>Nothing to change</value>
+  </data>
+  <data name="QuickTrumpetSummaryMissingFormat" xml:space="preserve">
+    <value>Not connected: {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryDeviceOne" xml:space="preserve">
+    <value>1 device</value>
+  </data>
+  <data name="QuickTrumpetSummaryDevicesFormat" xml:space="preserve">
+    <value>{0} devices</value>
+  </data>
+  <data name="QuickTrumpetSummaryAppOne" xml:space="preserve">
+    <value>1 app</value>
+  </data>
+  <data name="QuickTrumpetSummaryAppsFormat" xml:space="preserve">
+    <value>{0} apps</value>
+  </data>
+  <data name="QuickTrumpetSummaryPlaybackFormat" xml:space="preserve">
+    <value>Output → {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryPlaybackCommsFormat" xml:space="preserve">
+    <value>Calls output → {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryRecordingFormat" xml:space="preserve">
+    <value>Mic → {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryRecordingCommsFormat" xml:space="preserve">
+    <value>Calls mic → {0}</value>
+  </data>
+  <data name="QuickTrumpetRolePlayback" xml:space="preserve">
+    <value>Output</value>
+  </data>
+  <data name="QuickTrumpetRolePlaybackComms" xml:space="preserve">
+    <value>Calls output</value>
+  </data>
+  <data name="QuickTrumpetRoleRecording" xml:space="preserve">
+    <value>Microphone</value>
+  </data>
+  <data name="QuickTrumpetRoleRecordingComms" xml:space="preserve">
+    <value>Calls microphone</value>
+  </data>
+  <data name="SettingsQuickTrumpetNextHotkey" xml:space="preserve">
+    <value>Next preset</value>
+  </data>
+  <data name="SettingsQuickTrumpetPreviousHotkey" xml:space="preserve">
+    <value>Previous preset</value>
+  </data>
+  <data name="WebSettingsHotkeyNextPresetDesc" xml:space="preserve">
+    <value>Applies the next QuickTrumpet preset, wrapping around.</value>
+  </data>
+  <data name="WebSettingsHotkeyPreviousPresetDesc" xml:space="preserve">
+    <value>Applies the previous QuickTrumpet preset, wrapping around.</value>
+  </data>
+  <data name="WebSettingsQtPresetsDesc" xml:space="preserve">
+    <value>A preset can switch your default output and microphone, set device volumes and set app volumes — any mix of the three. Apply it here, with a shortcut or with the bt CLI.</value>
+  </data>
+  <data name="WebSettingsQtNewPreset" xml:space="preserve">
+    <value>New preset</value>
+  </data>
+  <data name="WebSettingsQtNewPresetDesc" xml:space="preserve">
+    <value>Saves what is checked below, as it is right now.</value>
+  </data>
+  <data name="WebSettingsQtWhatToSave" xml:space="preserve">
+    <value>What this preset saves</value>
+  </data>
+  <data name="WebSettingsQtNothingSelected" xml:space="preserve">
+    <value>Check at least one thing to save.</value>
+  </data>
+  <data name="WebSettingsQtIncludeDefaults" xml:space="preserve">
+    <value>Default devices</value>
+  </data>
+  <data name="WebSettingsQtIncludeDefaultsDesc" xml:space="preserve">
+    <value>Switch which output and microphone Windows uses, e.g. speakers + desk mic or headset + headset mic.</value>
+  </data>
+  <data name="WebSettingsQtIncludeDevices" xml:space="preserve">
+    <value>Device volumes</value>
+  </data>
+  <data name="WebSettingsQtIncludeDevicesDesc" xml:space="preserve">
+    <value>Volume and mute of the output devices you check.</value>
+  </data>
+  <data name="WebSettingsQtIncludeApps" xml:space="preserve">
+    <value>App volumes</value>
+  </data>
+  <data name="WebSettingsQtIncludeAppsDesc" xml:space="preserve">
+    <value>Volume and mute of each app in the mixer.</value>
+  </data>
+  <data name="WebSettingsQtAppsOpenFormat" xml:space="preserve">
+    <value>{0} apps open now</value>
+  </data>
+  <data name="WebSettingsQtDevicesCheckedFormat" xml:space="preserve">
+    <value>{0} of {1} checked</value>
+  </data>
+  <data name="WebSettingsQtChoose" xml:space="preserve">
+    <value>Choose</value>
+  </data>
+  <data name="WebSettingsQtDontChange" xml:space="preserve">
+    <value>Don't change</value>
+  </data>
+  <data name="WebSettingsQtNotConnected" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="WebSettingsQtNoDevice" xml:space="preserve">
+    <value>None available</value>
+  </data>
+  <data name="WebSettingsQtRouteApps" xml:space="preserve">
+    <value>Send apps back to their device</value>
+  </data>
+  <data name="WebSettingsQtRouteAppsDesc" xml:space="preserve">
+    <value>Pins each app to the output it was playing on when saved, so it won't follow a default-device switch.</value>
+  </data>
+  <data name="WebSettingsQtUpdateFromCurrent" xml:space="preserve">
+    <value>Update with current mix</value>
+  </data>
+  <data name="WebSettingsQtUpdateFromCurrentDesc" xml:space="preserve">
+    <value>Re-reads the current volumes and defaults for what this preset holds.</value>
+  </data>
+  <data name="WebSettingsQtUpdateConfirm" xml:space="preserve">
+    <value>Overwrite values?</value>
+  </data>
+  <data name="WebSettingsQtUpdated" xml:space="preserve">
+    <value>Updated</value>
+  </data>
+  <data name="WebSettingsQtAddDevice" xml:space="preserve">
+    <value>Add a device</value>
+  </data>
+  <data name="WebSettingsQtRemoveEntry" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="WebSettingsQtMuteEntry" xml:space="preserve">
+    <value>Muted</value>
+  </data>
+  <data name="WebSettingsQtNoDeviceEntries" xml:space="preserve">
+    <value>No device volume saved.</value>
+  </data>
+  <data name="WebSettingsQtNoAppEntries" xml:space="preserve">
+    <value>No app volume saved.</value>
+  </data>
+  <data name="WebSettingsQtLastApplied" xml:space="preserve">
+    <value>Last applied</value>
+  </data>
+  <data name="WebSettingsQtCycleTitle" xml:space="preserve">
+    <value>Cycle through presets</value>
+  </data>
+  <data name="WebSettingsQtCycleDesc" xml:space="preserve">
+    <value>One shortcut steps through your presets in list order and wraps around.</value>
+  </data>
+  <data name="WebSettingsQtNotificationTitle" xml:space="preserve">
+    <value>Confirmation</value>
+  </data>
+  <data name="WebSettingsQtNotificationDuration" xml:space="preserve">
+    <value>Notification duration</value>
+  </data>
+  <data name="WebSettingsQtNotificationDurationDesc" xml:space="preserve">
+    <value>How long the confirmation stays on screen.</value>
   </data>
 </root>

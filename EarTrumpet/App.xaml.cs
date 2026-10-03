@@ -74,11 +74,12 @@ namespace EarTrumpet
         {
             if (!Settings.ShowQuickTrumpetConfirmation) return;
 
-            var apps = result?.AppsApplied ?? 0;
-            var devices = result?.DevicesApplied ?? 0;
+            // Title names the preset; the body says what actually changed (default
+            // devices, device/app counts, anything that was not connected).
             _trayIcon?.ShowNotification(
-                EarTrumpet.Properties.Resources.QuickTrumpetAppliedTitle,
-                string.Format(EarTrumpet.Properties.Resources.QuickTrumpetAppliedMessage, presetName, apps, devices));
+                string.Format(EarTrumpet.Properties.Resources.QuickTrumpetToastTitleFormat, presetName),
+                QuickTrumpetSummary.DescribeResult(result),
+                Settings.QuickTrumpetNotificationSeconds * 1000);
         }
 
         private void EnsureTrayHoverTooltipPopup()
@@ -368,6 +369,7 @@ namespace EarTrumpet
                             Settings.AbsoluteVolumeDownHotkeyTyped += AbsoluteVolumeDecrement;
                             Settings.SwitchDeviceHotkeyTyped += CycleDefaultDevice;
                             Settings.QuickTrumpetPresetHotkeyTyped += ApplyQuickTrumpetPreset;
+                            Settings.QuickTrumpetCycleHotkeyTyped += CycleQuickTrumpetPreset;
                             Settings.RegisterHotkeys();
                             RegisterDeviceHotkeys();
                         }));
@@ -809,7 +811,9 @@ namespace EarTrumpet
             var ret = new List<ContextMenuItem>(CollectionViewModel.AllDevices.OrderBy(x => x.DisplayName).Select(dev => new ContextMenuItem
             {
                 DisplayName = dev.DisplayName,
-                Glyph = "\xE921",
+                // Shown only on the default device (IsChecked): a real check mark, not the
+                // ChromeMinimize dash (\xE921) that users read as an unexplained line (#71).
+                Glyph = "\xE73E",
                 IsChecked = dev.Id == CollectionViewModel.Default?.Id,
                 Command = new RelayCommand(() => dev.MakeDefaultDevice()),
             }));
@@ -1248,6 +1252,24 @@ namespace EarTrumpet
             catch (Exception ex)
             {
                 Trace.WriteLine($"ApplyQuickTrumpetPreset failed: {ex.Message}");
+            }
+        }
+
+        // "Next/previous preset" shortcuts: list order, wrapping, from the last applied preset.
+        private void CycleQuickTrumpetPreset(int direction)
+        {
+            try
+            {
+                var service = new VolumeProfileService(Settings);
+                var profile = service.GetCycleTarget(direction);
+                if (profile == null || CollectionViewModel == null) return;
+
+                var result = service.ApplyProfile(profile, CollectionViewModel, _deviceManager as IAudioDeviceManagerWindowsAudio);
+                ShowQuickTrumpetConfirmation(profile.Name, result);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"CycleQuickTrumpetPreset failed: {ex.Message}");
             }
         }
     }

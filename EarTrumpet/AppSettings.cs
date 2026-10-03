@@ -36,6 +36,8 @@ namespace EarTrumpet
         public event Action AbsoluteVolumeDownHotkeyTyped;
         public event Action SwitchDeviceHotkeyTyped;
         public event Action<string> QuickTrumpetPresetHotkeyTyped;
+        /// <summary>+1 = next preset, -1 = previous preset.</summary>
+        public event Action<int> QuickTrumpetCycleHotkeyTyped;
         public event Action CustomSliderColorsChanged;
         public event Action HiddenAppsChanged;
         public event Action HiddenDevicesChanged;
@@ -60,6 +62,7 @@ namespace EarTrumpet
         private bool _hotkeyPressHandlerRegistered;
         private DateTime _lastQuickTrumpetHotkeyAt = DateTime.MinValue;
         private string _lastQuickTrumpetHotkey;
+        private DateTime _lastQuickTrumpetCycleAt = DateTime.MinValue;
         private List<HiddenAppEntry> _hiddenAppEntries = new List<HiddenAppEntry>();
         private List<HiddenDeviceEntry> _hiddenDeviceEntries = new List<HiddenDeviceEntry>();
         private List<AppRuleEntry> _appRuleEntries = new List<AppRuleEntry>();
@@ -154,6 +157,8 @@ namespace EarTrumpet
             HotkeyManager.Current.Register(AbsoluteVolumeUpHotkey);
             HotkeyManager.Current.Register(AbsoluteVolumeDownHotkey);
             HotkeyManager.Current.Register(SwitchDeviceHotkey);
+            HotkeyManager.Current.Register(QuickTrumpetNextHotkey);
+            HotkeyManager.Current.Register(QuickTrumpetPreviousHotkey);
             RegisterQuickTrumpetHotkeys();
 
             if (_hotkeyPressHandlerRegistered)
@@ -193,6 +198,21 @@ namespace EarTrumpet
                 {
                     Trace.WriteLine("AppSettings SwitchDeviceHotkeyTyped");
                     SwitchDeviceHotkeyTyped?.Invoke();
+                }
+                else if (hotkey.Equals(QuickTrumpetNextHotkey) || hotkey.Equals(QuickTrumpetPreviousHotkey))
+                {
+                    // WM_HOTKEY auto-repeats while held; a short window keeps one press
+                    // from skipping presets but still allows quick deliberate steps.
+                    var now = DateTime.UtcNow;
+                    if ((now - _lastQuickTrumpetCycleAt).TotalMilliseconds < 350)
+                    {
+                        return;
+                    }
+
+                    _lastQuickTrumpetCycleAt = now;
+                    var direction = hotkey.Equals(QuickTrumpetNextHotkey) ? 1 : -1;
+                    Trace.WriteLine($"AppSettings QuickTrumpetCycleHotkeyTyped {direction}");
+                    QuickTrumpetCycleHotkeyTyped?.Invoke(direction);
                 }
                 else
                 {
@@ -236,17 +256,7 @@ namespace EarTrumpet
 
         private List<VolumeProfileService.VolumeProfile> GetQuickTrumpetHotkeyProfiles()
         {
-            try
-            {
-                var json = VolumeProfilesJson;
-                if (string.IsNullOrWhiteSpace(json) || json == "[]") return new List<VolumeProfileService.VolumeProfile>();
-                return Newtonsoft.Json.JsonConvert.DeserializeObject<List<VolumeProfileService.VolumeProfile>>(json) ?? new List<VolumeProfileService.VolumeProfile>();
-            }
-            catch (Exception ex)
-            {
-                Trace.WriteLine($"AppSettings GetQuickTrumpetHotkeyProfiles failed: {ex.Message}");
-                return new List<VolumeProfileService.VolumeProfile>();
-            }
+            return VolumeProfileService.ParseProfiles(VolumeProfilesJson);
         }
 
         public HotkeyData FlyoutHotkey
@@ -312,6 +322,30 @@ namespace EarTrumpet
                 HotkeyManager.Current.Unregister(SwitchDeviceHotkey);
                 _settings.Set("SwitchDeviceHotkey", value);
                 HotkeyManager.Current.Register(SwitchDeviceHotkey);
+            }
+        }
+
+        /// <summary>Applies the next QuickTrumpet preset in list order (wraps around).</summary>
+        public HotkeyData QuickTrumpetNextHotkey
+        {
+            get => _settings.Get("QuickTrumpetNextHotkey", new HotkeyData { });
+            set
+            {
+                HotkeyManager.Current.Unregister(QuickTrumpetNextHotkey);
+                _settings.Set("QuickTrumpetNextHotkey", value);
+                HotkeyManager.Current.Register(QuickTrumpetNextHotkey);
+            }
+        }
+
+        /// <summary>Applies the previous QuickTrumpet preset in list order (wraps around).</summary>
+        public HotkeyData QuickTrumpetPreviousHotkey
+        {
+            get => _settings.Get("QuickTrumpetPreviousHotkey", new HotkeyData { });
+            set
+            {
+                HotkeyManager.Current.Unregister(QuickTrumpetPreviousHotkey);
+                _settings.Set("QuickTrumpetPreviousHotkey", value);
+                HotkeyManager.Current.Register(QuickTrumpetPreviousHotkey);
             }
         }
 
@@ -1644,7 +1678,8 @@ namespace EarTrumpet
             get => _settings.Get("VolumeProfilesJson", "[]");
             set
             {
-                _settings.Set("VolumeProfilesJson", value);
+                // Set<string>(null) would persist an XML nil blob instead of JSON.
+                _settings.Set("VolumeProfilesJson", value ?? "[]");
                 RegisterQuickTrumpetHotkeys();
             }
         }
@@ -1944,6 +1979,23 @@ namespace EarTrumpet
         {
             get => _settings.Get("ShowQuickTrumpetConfirmation", true);
             set => _settings.Set("ShowQuickTrumpetConfirmation", value);
+        }
+
+        public const int QuickTrumpetNotificationSecondsMin = 1;
+        public const int QuickTrumpetNotificationSecondsMax = 10;
+
+        /// <summary>How long the QuickTrumpet confirmation toast stays on screen (1-10 s, default 3).</summary>
+        public int QuickTrumpetNotificationSeconds
+        {
+            get => Math.Max(QuickTrumpetNotificationSecondsMin, Math.Min(QuickTrumpetNotificationSecondsMax, _settings.Get("QuickTrumpetNotificationSeconds", 3)));
+            set => _settings.Set("QuickTrumpetNotificationSeconds", Math.Max(QuickTrumpetNotificationSecondsMin, Math.Min(QuickTrumpetNotificationSecondsMax, value)));
+        }
+
+        /// <summary>Id of the last applied preset, the starting point for next/previous cycling.</summary>
+        public string QuickTrumpetLastAppliedId
+        {
+            get => _settings.Get("QuickTrumpetLastAppliedId", "");
+            set => _settings.Set("QuickTrumpetLastAppliedId", value ?? "");
         }
 
         // Dynamic album art theme mode

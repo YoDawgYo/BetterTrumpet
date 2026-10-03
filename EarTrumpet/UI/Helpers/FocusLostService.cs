@@ -1,3 +1,4 @@
+using EarTrumpet.DataModel.Storage;
 using EarTrumpet.Logic;
 using EarTrumpet.UI.ViewModels;
 using System;
@@ -13,6 +14,9 @@ namespace EarTrumpet.UI.Helpers
     /// Polls the foreground window and applies focus-lost volume rules. Volume changes
     /// can be interpolated without adding undo entries; mute transitions fade to silence
     /// before muting and unmute before fading back to the saved level.
+    /// The poll timer only runs while the feature is enabled (or while saved volumes still
+    /// need restoring) and the fade timer only while a fade is pending, so a disabled
+    /// feature costs no wakeups at all (GitHub #74).
     /// </summary>
     public sealed class FocusLostService
     {
@@ -22,6 +26,19 @@ namespace EarTrumpet.UI.Helpers
         private readonly DispatcherTimer _timer;
         private readonly DispatcherTimer _fadeTimer;
         private readonly Dictionary<string, FadeOperation> _fades = new Dictionary<string, FadeOperation>(StringComparer.Ordinal);
+        private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+        private readonly ISettingsBag _settingsBag = StorageFactory.GetSettings();
+        private bool _isStarted;
+
+        // Settings reads go through the registry and an XmlSerializer, so they are cached here
+        // and refreshed from SettingChanged instead of being re-read on every 250 ms poll.
+        private bool _isEnabled;
+        private int _attenuatePercent;
+        private int _fadeDurationMs;
+        private bool _selectedAppsOnly;
+
+        private int _lastForegroundPid;
+        private string _lastForegroundExecutableName;
 
         public FocusLostService(DeviceCollectionViewModel collection, AppSettings settings)
         {
@@ -35,24 +52,72 @@ namespace EarTrumpet.UI.Helpers
 
         public void Start()
         {
-            if (!_timer.IsEnabled)
+            if (_isStarted)
             {
-                _timer.Start();
+                return;
             }
 
-            if (!_fadeTimer.IsEnabled)
-            {
-                _fadeTimer.Start();
-            }
+            _isStarted = true;
+            ReadSettings();
+            _settingsBag.SettingChanged += OnSettingChanged;
+            UpdatePollTimer();
         }
 
         public void Stop()
         {
+            _isStarted = false;
+            _settingsBag.SettingChanged -= OnSettingChanged;
             _timer.Stop();
             // Shutdown must never leave an app muted because a transition was pending.
             Apply(FocusLostMode.Off, 0, 0, 0);
             _fadeTimer.Stop();
             _fades.Clear();
+        }
+
+        private void OnSettingChanged(object sender, string key)
+        {
+            if (key == null ||
+                !(key == "UseFocusLostVolume" || key.StartsWith("FocusLost", StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            _dispatcher.BeginInvoke((Action)(() =>
+            {
+                if (!_isStarted)
+                {
+                    return;
+                }
+
+                ReadSettings();
+                // Run at least one poll after any change: enabling starts tracking, disabling
+                // restores the saved volumes, after which the timer stops itself.
+                if (!_timer.IsEnabled)
+                {
+                    _timer.Start();
+                }
+            }));
+        }
+
+        private void ReadSettings()
+        {
+            _isEnabled = _settings != null && _settings.UseFocusLostVolume;
+            _attenuatePercent = _settings?.FocusLostAttenuatePercent ?? 0;
+            _fadeDurationMs = _settings?.FocusLostFadeDurationMs ?? FocusLostFadePolicy.DefaultDurationMs;
+            _selectedAppsOnly = _settings?.FocusLostSelectedAppsOnly ?? false;
+        }
+
+        private void UpdatePollTimer()
+        {
+            var needsPolling = _isStarted && (_isEnabled || _supervisor.HasSavedState);
+            if (needsPolling && !_timer.IsEnabled)
+            {
+                _timer.Start();
+            }
+            else if (!needsPolling && _timer.IsEnabled)
+            {
+                _timer.Stop();
+            }
         }
 
         private void Poll()
@@ -64,15 +129,13 @@ namespace EarTrumpet.UI.Helpers
                 User32.GetWindowThreadProcessId(hwnd, out pid);
             }
 
-            var attenuatePercent = _settings?.FocusLostAttenuatePercent ?? 0;
-            var mode = FocusLostVolumePolicy.ResolveMode(
-                _settings != null && _settings.UseFocusLostVolume,
-                attenuatePercent);
+            var mode = FocusLostVolumePolicy.ResolveMode(_isEnabled, _attenuatePercent);
             Apply(
                 mode,
                 (int)pid,
-                attenuatePercent,
-                _settings?.FocusLostFadeDurationMs ?? FocusLostFadePolicy.DefaultDurationMs);
+                _attenuatePercent,
+                _fadeDurationMs);
+            UpdatePollTimer();
         }
 
         private void Apply(FocusLostMode mode, int foregroundPid, int attenuatePercent, int durationMs)
@@ -80,10 +143,10 @@ namespace EarTrumpet.UI.Helpers
             try
             {
                 durationMs = FocusLostFadePolicy.ClampDurationMs(durationMs);
-                var foregroundExecutableName = TryGetProcessName(foregroundPid);
+                var foregroundExecutableName = GetForegroundExecutableName(foregroundPid);
                 var sessions = new List<FocusLostSession>();
                 var appsByKey = new Dictionary<string, IAppItemViewModel>(StringComparer.Ordinal);
-                var selectedOnly = _settings?.FocusLostSelectedAppsOnly ?? false;
+                var selectedOnly = _selectedAppsOnly;
 
                 if (_collection?.AllDevices != null)
                 {
@@ -201,12 +264,18 @@ namespace EarTrumpet.UI.Helpers
                 DurationMs = durationMs,
                 StartedUtc = DateTime.UtcNow,
             };
+
+            if (!_fadeTimer.IsEnabled)
+            {
+                _fadeTimer.Start();
+            }
         }
 
         private void AdvanceFades()
         {
             if (_fades.Count == 0)
             {
+                _fadeTimer.Stop();
                 return;
             }
 
@@ -262,6 +331,19 @@ namespace EarTrumpet.UI.Helpers
         private static string BuildSessionKey(string deviceId, string sessionId)
         {
             return (deviceId ?? "") + "\u001f" + sessionId;
+        }
+
+        // Process.GetProcessById(...).ProcessName snapshots every process on the system,
+        // so only resolve the name when the foreground process actually changes.
+        private string GetForegroundExecutableName(int processId)
+        {
+            if (processId != _lastForegroundPid)
+            {
+                _lastForegroundPid = processId;
+                _lastForegroundExecutableName = TryGetProcessName(processId);
+            }
+
+            return _lastForegroundExecutableName;
         }
 
         private static string TryGetProcessName(int processId)

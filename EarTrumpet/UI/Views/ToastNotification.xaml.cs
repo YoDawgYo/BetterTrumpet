@@ -7,12 +7,16 @@ namespace EarTrumpet.UI.Views
 {
     public partial class ToastNotification : Window
     {
-        private DispatcherTimer _closeTimer;
-        private const int DisplayDurationMs = 3000;
+        public const int DefaultDisplayDurationMs = 3000;
 
-        public ToastNotification(string message, string icon = "\xE767")
+        private DispatcherTimer _closeTimer;
+        private readonly int _displayDurationMs;
+
+        public ToastNotification(string message, string icon = "\xE767", int durationMs = DefaultDisplayDurationMs)
         {
             InitializeComponent();
+
+            _displayDurationMs = durationMs > 0 ? durationMs : DefaultDisplayDurationMs;
 
             MessageText.Text = message;
             IconText.Text = icon;
@@ -41,7 +45,7 @@ namespace EarTrumpet.UI.Views
             // Auto-close timer
             _closeTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(DisplayDurationMs)
+                Interval = TimeSpan.FromMilliseconds(_displayDurationMs)
             };
             _closeTimer.Tick += (s, args) =>
             {

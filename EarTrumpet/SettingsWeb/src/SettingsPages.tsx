@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Button, Input, Spinner, Switch, Text, mergeClasses } from "@fluentui/react-components";
+import { Button, Checkbox, Input, Spinner, Switch, Text, mergeClasses } from "@fluentui/react-components";
 import {
   ActivityIcon,
   ArrowLeftRightIcon,
+  BellIcon,
   BlendIcon,
   BookmarkPlusIcon,
   CheckIcon,
@@ -34,10 +35,11 @@ import {
   TriangleAlertIcon,
   UploadIcon,
   Volume2Icon,
+  VolumeXIcon,
   XIcon,
 } from "@animateicons/react/lucide";
 import ElasticSlider from "./components/ElasticSlider";
-import type { AppRule, SettingKey, SettingsPageDescriptor, SettingsPayload, SettingValue } from "./types";
+import type { AppRule, AudioState, SettingKey, SettingsPageDescriptor, SettingsPayload, SettingValue, VolumeProfile } from "./types";
 import "./pages.css";
 
 type Styles = Record<string, string>;
@@ -189,10 +191,11 @@ function FeedbackContent({ done, icon, label, doneLabel }: { done: boolean; icon
 }
 
 /**
- * Two-step destructive button. First click arms it (red-tinted "Confirm?"),
- * second click fires. Reverts after 3 s, on blur, or with Escape.
+ * Two-step button. First click arms it ("Confirm?"), second click fires.
+ * Reverts after 3 s, on blur, or with Escape. `danger` (default) tints red;
+ * `neutral` is for overwrites that are not deletions.
  */
-function ConfirmButton({ payload, label, confirmLabel, icon, iconOnly, size, className, onConfirm }: { payload: SettingsPayload; label: string; confirmLabel?: string; icon: ReactNode; iconOnly?: boolean; size?: "small" | "medium"; className?: string; onConfirm: () => void }) {
+function ConfirmButton({ payload, label, confirmLabel, icon, iconOnly, size, className, tone = "danger", title, onConfirm }: { payload: SettingsPayload; label: string; confirmLabel?: string; icon: ReactNode; iconOnly?: boolean; size?: "small" | "medium"; className?: string; tone?: "danger" | "neutral"; title?: string; onConfirm: () => void }) {
   const [armed, setArmed] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   const reduce = useReducedMotion();
@@ -203,9 +206,9 @@ function ConfirmButton({ payload, label, confirmLabel, icon, iconOnly, size, cla
   return <Button
     appearance="subtle"
     size={size}
-    className={mergeClasses("bt-danger", iconOnly && !armed && "bt-danger-icon", armed && "bt-danger-armed", className)}
+    className={mergeClasses(tone === "danger" ? "bt-danger" : "bt-confirm", iconOnly && !armed && "bt-danger-icon", armed && (tone === "danger" ? "bt-danger-armed" : "bt-confirm-armed"), className)}
     aria-label={armed ? confirmText : label}
-    title={armed ? undefined : label}
+    title={armed ? undefined : title ?? label}
     onClick={event => {
       event.stopPropagation();
       if (!armed) {
@@ -412,101 +415,360 @@ function ShortcutsPage({ payload, styles, setSetting }: PageProps) {
   </>;
 }
 
-function ProfilesPage({ payload, styles, action }: PageProps) {
+// ── QuickTrumpet ──────────────────────────────────────────────────────────────
+// A preset is any mix of three parts: default devices (output / calls output /
+// microphone / calls microphone), device volumes for checked outputs, and app
+// volumes. The page captures exactly what is checked, then lets every saved
+// value be inspected and edited in place.
+
+const ROLE_LABELS: [string, string][] = [
+  ["rolePlayback", "Output"],
+  ["rolePlaybackComms", "Calls output"],
+  ["roleRecording", "Microphone"],
+  ["roleRecordingComms", "Calls microphone"],
+];
+
+const EMPTY_AUDIO: AudioState = { devices: [], playbackEndpoints: [], recordingEndpoints: [], defaults: [], appCount: 0 };
+
+/** "{0} of {1}" → "2 of 3" */
+const format = (template: string, ...args: (string | number)[]) => template.replace(/\{(\d+)\}/g, (_, index: string) => String(args[Number(index)] ?? ""));
+
+const roleLabel = (payload: SettingsPayload, role: number) => {
+  const [key, fallback] = ROLE_LABELS[role] ?? ROLE_LABELS[0];
+  return t(payload, key, fallback);
+};
+
+/** Checkbox row of the capture form; its option list opens under it on demand. */
+function IncludeRow({ id, checked, onChange, label, description, meta, open, onToggleOpen, chooseLabel, children }: { id: string; checked: boolean; onChange: (checked: boolean) => void; label: string; description: string; meta?: string; open?: boolean; onToggleOpen?: () => void; chooseLabel?: string; children?: ReactNode }) {
+  return <div className="bt-include">
+    <div className="bt-include-head">
+      <Checkbox id={id} checked={checked} onChange={(_, data) => onChange(Boolean(data.checked))} label={<span className="bt-include-copy"><Text weight="semibold">{label}</Text><Text className="bt-include-desc" size={200}>{description}</Text></span>} />
+      <span className="bt-include-side">
+        {meta && checked && <span className="chip-polished bt-tabular">{meta}</span>}
+        {onToggleOpen && <Button appearance="subtle" size="small" disabled={!checked} aria-expanded={Boolean(open && checked)} onClick={onToggleOpen}>
+          <span className="bt-btn-content">{chooseLabel}<ChevronDownIcon size={15} className={mergeClasses("bt-choose-chevron", open && checked && "bt-choose-chevron-open")} /></span>
+        </Button>}
+      </span>
+    </div>
+    {children && <Reveal open={Boolean(open && checked)}>{children}</Reveal>}
+  </div>;
+}
+
+function PresetCapture({ payload, styles, action, audio }: { payload: SettingsPayload; styles: Styles; action: Action; audio: AudioState }) {
   const [name, setName] = useState("");
-  const [allDevices, setAllDevices] = useState(false);
+  const [deviceVolumes, setDeviceVolumes] = useState(true);
+  // null = follow the current default output until the user picks devices.
+  const [deviceIds, setDeviceIds] = useState<string[] | null>(null);
+  const [appVolumes, setAppVolumes] = useState(true);
+  const [routeApps, setRouteApps] = useState(false);
+  const [defaults, setDefaults] = useState(false);
+  const [roles, setRoles] = useState<number[]>([0, 1, 2, 3]);
+  const [open, setOpen] = useState<"devices" | "defaults" | null>(null);
+  const [savedFlash, flashSaved] = useFlash<boolean>();
+
+  const defaultIds = audio.devices.filter(device => device.isDefault).map(device => device.id);
+  const selectedIds = (deviceIds ?? defaultIds).filter(id => audio.devices.some(device => device.id === id));
+  const availableRoles = audio.defaults.filter(slot => slot.deviceId).map(slot => slot.role as number);
+  const selectedRoles = roles.filter(role => availableRoles.includes(role));
+  const hasDevices = deviceVolumes && selectedIds.length > 0;
+  const hasDefaults = defaults && selectedRoles.length > 0;
+  const nothing = !hasDevices && !appVolumes && !hasDefaults;
+
+  const toggleDevice = (id: string, checked: boolean) => setDeviceIds(() => {
+    const next = selectedIds.filter(item => item !== id);
+    return checked ? [...next, id] : next;
+  });
+  const toggleRole = (role: number, checked: boolean) => setRoles(current => checked ? [...current.filter(item => item !== role), role] : current.filter(item => item !== role));
+  const toggleOpen = (part: "devices" | "defaults") => setOpen(current => current === part ? null : part);
+
+  // The host generates a default name, so Save stays enabled with an empty field.
+  const save = () => {
+    if (nothing) return;
+    action("profileCapture", {
+      name,
+      includeDeviceVolumes: hasDevices,
+      deviceIds: selectedIds,
+      includeAppVolumes: appVolumes,
+      routeApps: appVolumes && routeApps,
+      defaultRoles: hasDefaults ? selectedRoles : [],
+    });
+    setName("");
+    flashSaved(true);
+  };
+
+  const defaultsMeta = audio.defaults
+    .filter(slot => selectedRoles.includes(slot.role) && (slot.role === 0 || slot.role === 2))
+    .map(slot => slot.name)
+    .join(" + ");
+
+  return <div className="bt-capture">
+    <div className={mergeClasses(styles.actionRow, "bt-save-bar")}>
+      <Input className={styles.controlGrow} value={name} onChange={(_, data) => setName(data.value)} onKeyDown={event => { if (event.key === "Enter") save(); }} placeholder={t(payload, "presetName", "Preset name")} aria-label={t(payload, "presetName", "Preset name")} />
+      <Button appearance="primary" disabled={nothing && !savedFlash} onClick={save}><FeedbackContent done={Boolean(savedFlash)} icon={<SaveIcon size={17} />} label={t(payload, "save", "Save")} doneLabel={t(payload, "saved", "Saved")} /></Button>
+      <Button appearance="subtle" icon={<UploadIcon size={17} />} onClick={() => action("profileImport")}>{t(payload, "import", "Import")}</Button>
+    </div>
+    <Text className="bt-overline bt-capture-label" as="h3">{t(payload, "whatToSave", "What this preset saves")}</Text>
+    <IncludeRow
+      id="qt-include-defaults"
+      checked={defaults}
+      onChange={setDefaults}
+      label={t(payload, "includeDefaults", "Default devices")}
+      description={t(payload, "includeDefaultsDesc", "Switch which output and microphone Windows uses.")}
+      meta={defaultsMeta || undefined}
+      open={open === "defaults"}
+      onToggleOpen={() => toggleOpen("defaults")}
+      chooseLabel={t(payload, "choose", "Choose")}
+    >
+      <div className="bt-checklist">
+        {audio.defaults.map(slot => <Checkbox
+          key={slot.role}
+          className="bt-check-item"
+          disabled={!slot.deviceId}
+          checked={Boolean(slot.deviceId) && roles.includes(slot.role)}
+          onChange={(_, data) => toggleRole(slot.role, Boolean(data.checked))}
+          label={<span className="bt-check-label"><span className="bt-check-role">{roleLabel(payload, slot.role)}</span><span className="bt-check-name truncate-text">{slot.name || t(payload, "noDevice", "None available")}</span></span>}
+        />)}
+      </div>
+    </IncludeRow>
+    <IncludeRow
+      id="qt-include-devices"
+      checked={deviceVolumes}
+      onChange={setDeviceVolumes}
+      label={t(payload, "includeDevices", "Device volumes")}
+      description={t(payload, "includeDevicesDesc", "Volume and mute of the output devices you check.")}
+      meta={format(t(payload, "devicesCheckedFormat", "{0} of {1} checked"), selectedIds.length, audio.devices.length)}
+      open={open === "devices"}
+      onToggleOpen={() => toggleOpen("devices")}
+      chooseLabel={t(payload, "choose", "Choose")}
+    >
+      <div className="bt-checklist">
+        {audio.devices.map(device => <Checkbox
+          key={device.id}
+          className="bt-check-item"
+          checked={selectedIds.includes(device.id)}
+          onChange={(_, data) => toggleDevice(device.id, Boolean(data.checked))}
+          label={<span className="bt-check-label">
+            <span className="bt-check-name truncate-text">{device.name}</span>
+            {device.isDefault && <span className="badge-default-polished">{t(payload, "defaultDeviceBadge", "Default")}</span>}
+            <span className="bt-check-meta bt-tabular">{device.muted ? t(payload, "muteEntry", "Muted") : `${device.volume}%`}</span>
+          </span>}
+        />)}
+      </div>
+    </IncludeRow>
+    <IncludeRow
+      id="qt-include-apps"
+      checked={appVolumes}
+      onChange={setAppVolumes}
+      label={t(payload, "includeApps", "App volumes")}
+      description={t(payload, "includeAppsDesc", "Volume and mute of each app in the mixer.")}
+      meta={format(t(payload, "appsOpenFormat", "{0} apps open now"), audio.appCount)}
+    />
+    <Reveal open={appVolumes}>
+      <div className="bt-include-sub">
+        <Checkbox checked={routeApps} onChange={(_, data) => setRouteApps(Boolean(data.checked))} label={<span className="bt-include-copy"><Text>{t(payload, "routeApps", "Send apps back to their device")}</Text><Text className="bt-include-desc" size={200}>{t(payload, "routeAppsDesc", "Pins each app to the output it was playing on when saved.")}</Text></span>} />
+      </div>
+    </Reveal>
+    <Reveal open={nothing}><Text className="bt-capture-hint" size={200}>{t(payload, "nothingSelected", "Check at least one thing to save.")}</Text></Reveal>
+  </div>;
+}
+
+/** One saved value: name, editable volume, mute toggle, remove. */
+function PresetEntry({ payload, styles, name, meta, volume, muted, missing, onVolume, onMute, onRemove }: { payload: SettingsPayload; styles: Styles; name: string; meta?: string; volume: number; muted: boolean; missing?: boolean; onVolume: (value: number) => void; onMute: (muted: boolean) => void; onRemove: () => void }) {
+  const muteLabel = t(payload, "muteEntry", "Muted");
+  const removeLabel = t(payload, "removeEntry", "Remove");
+  return <div className="bt-entry">
+    <div className="bt-entry-copy">
+      <span className="bt-entry-title"><Text className="truncate-text" weight="semibold">{name}</Text>{missing && <span className="chip-polished bt-chip-quiet">{t(payload, "notConnected", "Not connected")}</span>}</span>
+      {meta && <Text className={`${styles.listMeta} truncate-text`} size={200}>{meta}</Text>}
+    </div>
+    <ElasticSlider className="bt-entry-range" value={volume} startingValue={0} maxValue={100} isStepped stepSize={1} suffix="%" locale={payload.locale} ariaLabel={`${name} · ${t(payload, "targetVolume", "Volume")}`} leftIcon={<MinusIcon size={14} />} rightIcon={<PlusIcon size={14} />} onCommit={onVolume} />
+    <Button appearance="subtle" size="small" className={mergeClasses("bt-mute", muted && "bt-mute-on")} aria-pressed={muted} aria-label={muteLabel} title={muteLabel} icon={muted ? <VolumeXIcon size={16} /> : <Volume2Icon size={16} />} onClick={() => onMute(!muted)} />
+    <Button appearance="subtle" size="small" className="bt-entry-remove" aria-label={`${removeLabel} · ${name}`} title={removeLabel} icon={<XIcon size={15} />} onClick={onRemove} />
+  </div>;
+}
+
+function PresetGroup({ title, control, children }: { title: string; control?: ReactNode; children: ReactNode }) {
+  return <div className="bt-group">
+    <div className="bt-group-head"><Text className="bt-overline" as="h4">{title}</Text>{control}</div>
+    {children}
+  </div>;
+}
+
+function PresetDetails({ payload, styles, action, audio, profile, renameValue, setRenameValue, renamed, onRenamed, onDeleted }: { payload: SettingsPayload; styles: Styles; action: Action; audio: AudioState; profile: VolumeProfile; renameValue: string; setRenameValue: (value: string) => void; renamed: boolean; onRenamed: () => void; onDeleted: () => void }) {
+  const [updatedFlash, flashUpdated] = useFlash<boolean>();
+  const ref = { id: profile.id, index: profile.index };
+  const trimmed = renameValue.trim();
+  const unusedDevices = audio.devices.filter(device => !profile.devices.some(entry => entry.key === device.id));
+  const reduce = useReducedMotion();
+
+  return <div className={styles.accDetail}>
+    <PresetGroup title={t(payload, "includeDefaults", "Default devices")}>
+      {profile.defaults.map(slot => {
+        const endpoints = slot.role >= 2 ? audio.recordingEndpoints : audio.playbackEndpoints;
+        const known = endpoints.some(endpoint => endpoint.id === slot.deviceId);
+        const label = roleLabel(payload, slot.role);
+        return <div className="bt-entry bt-entry-slot" key={slot.role}>
+          <div className="bt-entry-copy"><Text weight="semibold">{label}</Text></div>
+          <select className={mergeClasses(styles.select, "select-polished", "bt-slot-select")} value={slot.deviceId} aria-label={label} onChange={event => action("profileSetDefault", { ...ref, role: slot.role, deviceId: event.currentTarget.value })}>
+            <option value="">{t(payload, "dontChange", "Don't change")}</option>
+            {endpoints.map(endpoint => <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>)}
+            {slot.deviceId && !known && <option value={slot.deviceId}>{`${slot.name} · ${t(payload, "notConnected", "Not connected")}`}</option>}
+          </select>
+        </div>;
+      })}
+    </PresetGroup>
+
+    <PresetGroup title={t(payload, "includeDevices", "Device volumes")} control={<Switch checked={profile.includeDeviceVolumes} aria-label={t(payload, "includeDevices", "Device volumes")} onChange={(_, data) => action("profileSetInclude", { ...ref, deviceVolumes: data.checked })} />}>
+      <div className={mergeClasses("bt-group-body", !profile.includeDeviceVolumes && "bt-group-off")}>
+        <AnimatePresence initial={false}>
+          {profile.devices.map(entry => <motion.div key={entry.key} {...itemMotion(reduce)}>
+            <PresetEntry payload={payload} styles={styles} name={entry.name} volume={entry.volume} muted={entry.muted} missing={entry.missing}
+              onVolume={volume => action("profileDeviceUpdate", { ...ref, key: entry.key, volume })}
+              onMute={muted => action("profileDeviceUpdate", { ...ref, key: entry.key, muted })}
+              onRemove={() => action("profileDeviceRemove", { ...ref, key: entry.key })} />
+          </motion.div>)}
+        </AnimatePresence>
+        {profile.devices.length === 0 && <Text className="bt-group-empty" size={200}>{t(payload, "noDeviceEntries", "No device volume saved.")}</Text>}
+        {unusedDevices.length > 0 && <div className="bt-entry bt-entry-add">
+          <select className={mergeClasses(styles.select, "select-polished", "bt-slot-select")} value="" aria-label={t(payload, "addDevice", "Add a device")} onChange={event => { if (event.currentTarget.value) action("profileDeviceAdd", { ...ref, key: event.currentTarget.value }); }}>
+            <option value="">{`+ ${t(payload, "addDevice", "Add a device")}`}</option>
+            {unusedDevices.map(device => <option key={device.id} value={device.id}>{`${device.name} · ${device.volume}%`}</option>)}
+          </select>
+        </div>}
+      </div>
+    </PresetGroup>
+
+    <PresetGroup title={t(payload, "includeApps", "App volumes")} control={<Switch checked={profile.includeAppVolumes} aria-label={t(payload, "includeApps", "App volumes")} onChange={(_, data) => action("profileSetInclude", { ...ref, appVolumes: data.checked })} />}>
+      <div className={mergeClasses("bt-group-body", !profile.includeAppVolumes && "bt-group-off")}>
+        <AnimatePresence initial={false}>
+          {profile.apps.map(entry => <motion.div key={entry.key} {...itemMotion(reduce)}>
+            <PresetEntry payload={payload} styles={styles} name={entry.name} meta={entry.deviceName} volume={entry.volume} muted={entry.muted}
+              onVolume={volume => action("profileAppUpdate", { ...ref, key: entry.key, volume })}
+              onMute={muted => action("profileAppUpdate", { ...ref, key: entry.key, muted })}
+              onRemove={() => action("profileAppRemove", { ...ref, key: entry.key })} />
+          </motion.div>)}
+        </AnimatePresence>
+        {profile.apps.length === 0 && <Text className="bt-group-empty" size={200}>{t(payload, "noAppEntries", "No app volume saved.")}</Text>}
+        {profile.apps.length > 0 && <label className="bt-entry bt-entry-option" htmlFor={`qt-route-${profile.id}`}>
+          <div className="bt-entry-copy"><Text weight="semibold">{t(payload, "routeApps", "Send apps back to their device")}</Text><Text className={styles.listMeta} size={200}>{t(payload, "routeAppsDesc", "Pins each app to the output it was playing on when saved.")}</Text></div>
+          <Switch id={`qt-route-${profile.id}`} checked={profile.routeApps} aria-label={t(payload, "routeApps", "Send apps back to their device")} onChange={(_, data) => action("profileSetInclude", { ...ref, routeApps: data.checked })} />
+        </label>}
+      </div>
+    </PresetGroup>
+
+    <div className={mergeClasses(styles.settingRow, "bt-group")}>
+      <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "rename", "Rename")}</Text></div>
+      <div className={styles.rowActions}>
+        <Input value={renameValue} onChange={(_, data) => setRenameValue(data.value)} placeholder={t(payload, "presetName", "Preset name")} aria-label={t(payload, "presetName", "Preset name")} />
+        <Button appearance="secondary" disabled={!renamed && (!trimmed || trimmed === profile.name)} onClick={() => { action("profileRename", { ...ref, name: trimmed }); onRenamed(); }}>
+          <FeedbackContent done={renamed} label={t(payload, "rename", "Rename")} doneLabel={t(payload, "saved", "Saved")} />
+        </Button>
+      </div>
+    </div>
+    <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-between bt-preset-actions")}>
+      <span className="bt-preset-actions-start">
+        <ConfirmButton payload={payload} tone="neutral" label={updatedFlash ? t(payload, "updated", "Updated") : t(payload, "updateFromCurrent", "Update with current mix")} confirmLabel={t(payload, "updateConfirm", "Overwrite values?")} icon={updatedFlash ? <CheckIcon size={16} /> : <RefreshCwIcon size={16} />} title={t(payload, "updateFromCurrentDesc", "Re-reads the current volumes and defaults for what this preset holds.")} onConfirm={() => { action("profileUpdateFromCurrent", ref); flashUpdated(true); }} />
+        <Button appearance="subtle" icon={<DownloadIcon size={17} />} onClick={() => action("profileExport", ref)}>{t(payload, "export", "Export")}</Button>
+      </span>
+      <ConfirmButton payload={payload} label={t(payload, "delete", "Delete")} icon={<Trash2Icon size={16} />} onConfirm={() => { action("profileDelete", { ...ref, confirmed: true }); onDeleted(); }} />
+    </div>
+  </div>;
+}
+
+function ProfilesPage({ payload, styles, action, setSetting }: PageProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [savedFlash, flashSaved] = useFlash<boolean>();
   const [appliedFlash, flashApplied] = useFlash<string>();
   const [renamedFlash, flashRenamed] = useFlash<string>();
   const capture = useHotkeyCapture();
   const reduce = useReducedMotion();
   const profiles = payload.collections.profiles;
-  const keyOf = (profile: { slug: string; name: string }) => profile.slug || profile.name;
+  const audio = payload.collections.audio ?? EMPTY_AUDIO;
+  const cycleHotkeys = payload.collections.hotkeys.filter(hotkey => hotkey.id === "presetNext" || hotkey.id === "presetPrevious");
+  const keyOf = (profile: VolumeProfile) => profile.id || profile.slug || profile.name;
+  const confirmationOn = Boolean(payload.values.showQuickTrumpetConfirmation);
 
-  // The host generates a default name, so Save stays enabled with an empty field.
-  const save = () => { action("profileCapture", { name, allDevices }); setName(""); flashSaved(true); };
-  const toggle = (key: string, currentName: string) => {
+  const toggle = (profile: VolumeProfile) => {
+    const key = keyOf(profile);
     setExpanded(current => current === key ? null : key);
-    setRenameValue(currentName);
+    setRenameValue(profile.name);
   };
 
-  return <Section icon={<SlidersHorizontalIcon size={18} />} title={t(payload, "savedProfiles", "Presets")} description={t(payload, "profileCaptureDescription", "Save the current device and app volumes, then re-apply them in one click or shortcut.")} anchor="presets" styles={styles}>
-    <Reveal open={profiles.length === 0}>
-      <div className="bt-empty-block">
-        <span className="bt-empty-icon" aria-hidden="true"><BookmarkPlusIcon size={18} /></span>
-        <Text className="bt-empty-text" size={200}>{t(payload, "emptyProfilesHint", "Capture your current mix as your first preset.")}</Text>
-      </div>
-    </Reveal>
-    <div className={mergeClasses(styles.actionRow, "bt-save-bar")}>
-      <Input className={styles.controlGrow} value={name} onChange={(_, data) => setName(data.value)} onKeyDown={event => { if (event.key === "Enter") save(); }} placeholder={t(payload, "presetName", "Preset name")} aria-label={t(payload, "presetName", "Preset name")} />
-      <Button appearance="primary" onClick={save}><FeedbackContent done={Boolean(savedFlash)} icon={<SaveIcon size={17} />} label={t(payload, "save", "Save")} doneLabel={t(payload, "saved", "Saved")} /></Button>
-    </div>
-    <div className={mergeClasses(styles.actionRow, "bt-save-options")}>
-      <Switch checked={allDevices} label={t(payload, "allDevices", "All devices")} onChange={(_, data) => setAllDevices(data.checked)} />
-      <Button appearance="subtle" icon={<UploadIcon size={17} />} onClick={() => action("profileImport")}>{t(payload, "import", "Import")}</Button>
-    </div>
-    <div className={mergeClasses(styles.accList, profiles.length > 0 && "bt-acc-list-separated")}>
-      <AnimatePresence initial={false}>
-        {profiles.map(profile => {
-          const key = keyOf(profile);
-          const isOpen = expanded === key;
-          const isSelected = profile.index === payload.collections.selectedProfileIndex;
-          const trimmed = renameValue.trim();
-          const renamed = renamedFlash === key;
-          return <motion.div className={styles.accItem} key={key} {...itemMotion(reduce)}>
-            <div
-              className={mergeClasses(styles.accHeader, "acc-header-polished")}
-              role="button"
-              tabIndex={0}
-              aria-expanded={isOpen}
-              onClick={() => toggle(key, profile.name)}
-              onKeyDown={event => headerKeys(event, () => toggle(key, profile.name))}
-            >
-              <div className={styles.accCopy}>
-                <div className="list-row-title">
-                  <Text weight="semibold">{profile.name}</Text>
-                  {isSelected && <span className="badge-default-polished">{t(payload, "profileSelected", "Applied")}</span>}
-                  {profile.applyAppsOnly && <span className="chip-polished">{t(payload, "appsOnly", "Apps only")}</span>}
-                </div>
-                <Text className={`${styles.listMeta} truncate-text`} size={200}>{profile.details}</Text>
-              </div>
-              <span className={styles.accInlineControls} onClick={stop}>
-                <HotkeyControl payload={payload} id={`profile:${profile.index}`} value={profile.hotkey} capture={capture} />
-                <Button appearance={isSelected ? "primary" : "secondary"} onClick={() => { action("profileApply", { index: profile.index }); flashApplied(key); }}>
-                  <FeedbackContent done={appliedFlash === key} label={t(payload, "apply", "Apply")} doneLabel={t(payload, "applied", "Applied")} />
-                </Button>
-              </span>
-              <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
-            </div>
-            <Reveal open={isOpen}>
-              <div className={styles.accDetail}>
-                <label className={`${styles.settingRow} setting-row-polished`} htmlFor={`profile-apps-only-${profile.index}`}>
-                  <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "appsOnly", "Apply apps only")}</Text><Text className={styles.settingDescription} size={200}>{t(payload, "appsOnlyDescription", "Only matching app volumes change; devices keep their volume.")}</Text></div>
-                  <Switch id={`profile-apps-only-${profile.index}`} checked={profile.applyAppsOnly} aria-label={t(payload, "appsOnly", "Apply apps only")} onChange={(_, data) => action("profileAppsOnly", { index: profile.index, value: data.checked })} />
-                </label>
-                <div className={styles.settingRow}>
-                  <div className={styles.settingCopy}><Text weight="semibold">{t(payload, "rename", "Rename")}</Text></div>
-                  <div className={styles.rowActions}>
-                    <Input value={renameValue} onChange={(_, data) => setRenameValue(data.value)} placeholder={t(payload, "presetName", "Preset name")} aria-label={t(payload, "presetName", "Preset name")} />
-                    <Button appearance="secondary" disabled={!renamed && (!trimmed || trimmed === profile.name)} onClick={() => { action("profileRename", { index: profile.index, name: trimmed }); flashRenamed(key); }}>
-                      <FeedbackContent done={renamed} label={t(payload, "rename", "Rename")} doneLabel={t(payload, "saved", "Saved")} />
-                    </Button>
+  // A freshly captured preset opens, so what it saved is visible right away.
+  useNewItem(profiles.map(keyOf), key => {
+    setExpanded(key);
+    setRenameValue(profiles.find(profile => keyOf(profile) === key)?.name ?? "");
+  });
+
+  return <>
+    <Section icon={<SlidersHorizontalIcon size={18} />} title={t(payload, "savedProfiles", "Presets")} description={t(payload, "presetsDescription", "A preset can switch your default output and microphone, set device volumes and set app volumes.")} anchor="presets" styles={styles}>
+      <Reveal open={profiles.length === 0}>
+        <div className="bt-empty-block">
+          <span className="bt-empty-icon" aria-hidden="true"><BookmarkPlusIcon size={18} /></span>
+          <Text className="bt-empty-text" size={200}>{t(payload, "emptyProfilesHint", "Capture your current mix as your first preset.")}</Text>
+        </div>
+      </Reveal>
+      <PresetCapture payload={payload} styles={styles} action={action} audio={audio} />
+      <div className={mergeClasses(styles.accList, profiles.length > 0 && "bt-acc-list-separated")}>
+        <AnimatePresence initial={false}>
+          {profiles.map(profile => {
+            const key = keyOf(profile);
+            const isOpen = expanded === key;
+            return <motion.div className={styles.accItem} key={key} {...itemMotion(reduce)}>
+              <div
+                className={mergeClasses(styles.accHeader, "acc-header-polished")}
+                role="button"
+                tabIndex={0}
+                aria-expanded={isOpen}
+                onClick={() => toggle(profile)}
+                onKeyDown={event => headerKeys(event, () => toggle(profile))}
+              >
+                <div className={styles.accCopy}>
+                  <div className="list-row-title">
+                    <Text weight="semibold">{profile.name}</Text>
+                    {profile.isLastApplied && <span className="badge-default-polished">{t(payload, "lastApplied", "Last applied")}</span>}
                   </div>
+                  <Text className={`${styles.listMeta} truncate-text`} size={200}>{profile.details}</Text>
                 </div>
-                <div className={mergeClasses(styles.actionRow, "bt-row-separated bt-row-between")}>
-                  <Button appearance="secondary" icon={<DownloadIcon size={17} />} onClick={() => action("profileExport", { index: profile.index })}>{t(payload, "export", "Export")}</Button>
-                  <ConfirmButton payload={payload} label={t(payload, "delete", "Delete")} icon={<Trash2Icon size={16} />} onConfirm={() => { action("profileDelete", { index: profile.index, confirmed: true }); setExpanded(null); }} />
-                </div>
+                <span className={styles.accInlineControls} onClick={stop}>
+                  <HotkeyControl payload={payload} id={`profile:${profile.index}`} value={profile.hotkey} capture={capture} />
+                  <Button appearance="secondary" onClick={() => { action("profileApply", { id: profile.id, index: profile.index }); flashApplied(key); }}>
+                    <FeedbackContent done={appliedFlash === key} label={t(payload, "apply", "Apply")} doneLabel={t(payload, "applied", "Applied")} />
+                  </Button>
+                </span>
+                <ChevronDownIcon size={17} className={mergeClasses(styles.accChevron, isOpen && styles.accChevronOpen)} />
               </div>
-            </Reveal>
-          </motion.div>;
-        })}
-      </AnimatePresence>
-    </div>
-    <ToggleRow className="bt-row-separated" payload={payload} styles={styles} settingKey="showQuickTrumpetConfirmation" label={t(payload, "confirmation", "Show confirmation after applying")} />
-  </Section>;
+              <Reveal open={isOpen}>
+                <PresetDetails
+                  payload={payload}
+                  styles={styles}
+                  action={action}
+                  audio={audio}
+                  profile={profile}
+                  renameValue={renameValue}
+                  setRenameValue={setRenameValue}
+                  renamed={renamedFlash === key}
+                  onRenamed={() => flashRenamed(key)}
+                  onDeleted={() => setExpanded(null)}
+                />
+              </Reveal>
+            </motion.div>;
+          })}
+        </AnimatePresence>
+      </div>
+    </Section>
+    <Section icon={<KeyboardIcon size={18} />} title={t(payload, "cycleTitle", "Cycle through presets")} description={t(payload, "cycleDesc", "One shortcut steps through your presets in list order and wraps around.")} anchor="presetCycle" styles={styles}>
+      <div className={styles.list}>
+        {cycleHotkeys.map(hotkey => <ListRow key={hotkey.id} styles={styles} title={hotkey.label} meta={hotkey.description} actions={<HotkeyControl payload={payload} id={hotkey.id} value={hotkey.value} capture={capture} />} />)}
+      </div>
+    </Section>
+    <Section icon={<BellIcon size={18} />} title={t(payload, "qtNotification", "Confirmation")} anchor="presetNotification" styles={styles}>
+      <ToggleRow payload={payload} styles={styles} settingKey="showQuickTrumpetConfirmation" label={t(payload, "confirmation", "Show a confirmation when a preset is applied")} setSetting={setSetting} />
+      <Reveal open={confirmationOn} className="bt-reveal-rows">
+        <RangeRow payload={payload} styles={styles} label={t(payload, "notificationDuration", "Notification duration")} description={t(payload, "notificationDurationDesc", "How long the confirmation stays on screen.")} value={Number(payload.values.quickTrumpetNotificationSeconds) || 3} min={1} max={10} suffix={` ${t(payload, "secondsShort", "s")}`} onCommit={value => setSetting("quickTrumpetNotificationSeconds", value)} />
+      </Reveal>
+    </Section>
+  </>;
 }
 
 function RulesPage({ payload, styles, action }: PageProps) {

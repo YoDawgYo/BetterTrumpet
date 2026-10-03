@@ -3619,5 +3619,167 @@ namespace EarTrumpet.Properties {
         public static string WebSettingsRequiresAutoCheck {
             get { return ResourceManager.GetString("WebSettingsRequiresAutoCheck", resourceCulture); }
         }
+        public static string QuickTrumpetToastTitleFormat {
+            get { return ResourceManager.GetString("QuickTrumpetToastTitleFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryEmpty {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryEmpty", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryNothing {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryNothing", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryMissingFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryMissingFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryDeviceOne {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryDeviceOne", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryDevicesFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryDevicesFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryAppOne {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryAppOne", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryAppsFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryAppsFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryPlaybackFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryPlaybackFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryPlaybackCommsFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryPlaybackCommsFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryRecordingFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryRecordingFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetSummaryRecordingCommsFormat {
+            get { return ResourceManager.GetString("QuickTrumpetSummaryRecordingCommsFormat", resourceCulture); }
+        }
+        public static string QuickTrumpetRolePlayback {
+            get { return ResourceManager.GetString("QuickTrumpetRolePlayback", resourceCulture); }
+        }
+        public static string QuickTrumpetRolePlaybackComms {
+            get { return ResourceManager.GetString("QuickTrumpetRolePlaybackComms", resourceCulture); }
+        }
+        public static string QuickTrumpetRoleRecording {
+            get { return ResourceManager.GetString("QuickTrumpetRoleRecording", resourceCulture); }
+        }
+        public static string QuickTrumpetRoleRecordingComms {
+            get { return ResourceManager.GetString("QuickTrumpetRoleRecordingComms", resourceCulture); }
+        }
+        public static string SettingsQuickTrumpetNextHotkey {
+            get { return ResourceManager.GetString("SettingsQuickTrumpetNextHotkey", resourceCulture); }
+        }
+        public static string SettingsQuickTrumpetPreviousHotkey {
+            get { return ResourceManager.GetString("SettingsQuickTrumpetPreviousHotkey", resourceCulture); }
+        }
+        public static string WebSettingsHotkeyNextPresetDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeyNextPresetDesc", resourceCulture); }
+        }
+        public static string WebSettingsHotkeyPreviousPresetDesc {
+            get { return ResourceManager.GetString("WebSettingsHotkeyPreviousPresetDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtPresetsDesc {
+            get { return ResourceManager.GetString("WebSettingsQtPresetsDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtNewPreset {
+            get { return ResourceManager.GetString("WebSettingsQtNewPreset", resourceCulture); }
+        }
+        public static string WebSettingsQtNewPresetDesc {
+            get { return ResourceManager.GetString("WebSettingsQtNewPresetDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtWhatToSave {
+            get { return ResourceManager.GetString("WebSettingsQtWhatToSave", resourceCulture); }
+        }
+        public static string WebSettingsQtNothingSelected {
+            get { return ResourceManager.GetString("WebSettingsQtNothingSelected", resourceCulture); }
+        }
+        public static string WebSettingsQtIncludeDefaults {
+            get { return ResourceManager.GetString("WebSettingsQtIncludeDefaults", resourceCulture); }
+        }
+        public static string WebSettingsQtIncludeDefaultsDesc {
+            get { return ResourceManager.GetString("WebSettingsQtIncludeDefaultsDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtIncludeDevices {
+            get { return ResourceManager.GetString("WebSettingsQtIncludeDevices", resourceCulture); }
+        }
+        public static string WebSettingsQtIncludeDevicesDesc {
+            get { return ResourceManager.GetString("WebSettingsQtIncludeDevicesDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtIncludeApps {
+            get { return ResourceManager.GetString("WebSettingsQtIncludeApps", resourceCulture); }
+        }
+        public static string WebSettingsQtIncludeAppsDesc {
+            get { return ResourceManager.GetString("WebSettingsQtIncludeAppsDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtAppsOpenFormat {
+            get { return ResourceManager.GetString("WebSettingsQtAppsOpenFormat", resourceCulture); }
+        }
+        public static string WebSettingsQtDevicesCheckedFormat {
+            get { return ResourceManager.GetString("WebSettingsQtDevicesCheckedFormat", resourceCulture); }
+        }
+        public static string WebSettingsQtChoose {
+            get { return ResourceManager.GetString("WebSettingsQtChoose", resourceCulture); }
+        }
+        public static string WebSettingsQtDontChange {
+            get { return ResourceManager.GetString("WebSettingsQtDontChange", resourceCulture); }
+        }
+        public static string WebSettingsQtNotConnected {
+            get { return ResourceManager.GetString("WebSettingsQtNotConnected", resourceCulture); }
+        }
+        public static string WebSettingsQtNoDevice {
+            get { return ResourceManager.GetString("WebSettingsQtNoDevice", resourceCulture); }
+        }
+        public static string WebSettingsQtRouteApps {
+            get { return ResourceManager.GetString("WebSettingsQtRouteApps", resourceCulture); }
+        }
+        public static string WebSettingsQtRouteAppsDesc {
+            get { return ResourceManager.GetString("WebSettingsQtRouteAppsDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtUpdateFromCurrent {
+            get { return ResourceManager.GetString("WebSettingsQtUpdateFromCurrent", resourceCulture); }
+        }
+        public static string WebSettingsQtUpdateFromCurrentDesc {
+            get { return ResourceManager.GetString("WebSettingsQtUpdateFromCurrentDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtUpdateConfirm {
+            get { return ResourceManager.GetString("WebSettingsQtUpdateConfirm", resourceCulture); }
+        }
+        public static string WebSettingsQtUpdated {
+            get { return ResourceManager.GetString("WebSettingsQtUpdated", resourceCulture); }
+        }
+        public static string WebSettingsQtAddDevice {
+            get { return ResourceManager.GetString("WebSettingsQtAddDevice", resourceCulture); }
+        }
+        public static string WebSettingsQtRemoveEntry {
+            get { return ResourceManager.GetString("WebSettingsQtRemoveEntry", resourceCulture); }
+        }
+        public static string WebSettingsQtMuteEntry {
+            get { return ResourceManager.GetString("WebSettingsQtMuteEntry", resourceCulture); }
+        }
+        public static string WebSettingsQtNoDeviceEntries {
+            get { return ResourceManager.GetString("WebSettingsQtNoDeviceEntries", resourceCulture); }
+        }
+        public static string WebSettingsQtNoAppEntries {
+            get { return ResourceManager.GetString("WebSettingsQtNoAppEntries", resourceCulture); }
+        }
+        public static string WebSettingsQtLastApplied {
+            get { return ResourceManager.GetString("WebSettingsQtLastApplied", resourceCulture); }
+        }
+        public static string WebSettingsQtCycleTitle {
+            get { return ResourceManager.GetString("WebSettingsQtCycleTitle", resourceCulture); }
+        }
+        public static string WebSettingsQtCycleDesc {
+            get { return ResourceManager.GetString("WebSettingsQtCycleDesc", resourceCulture); }
+        }
+        public static string WebSettingsQtNotificationTitle {
+            get { return ResourceManager.GetString("WebSettingsQtNotificationTitle", resourceCulture); }
+        }
+        public static string WebSettingsQtNotificationDuration {
+            get { return ResourceManager.GetString("WebSettingsQtNotificationDuration", resourceCulture); }
+        }
+        public static string WebSettingsQtNotificationDurationDesc {
+            get { return ResourceManager.GetString("WebSettingsQtNotificationDurationDesc", resourceCulture); }
+        }
     }
 }

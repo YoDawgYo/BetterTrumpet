@@ -921,7 +921,7 @@ Voulez-vous ouvrir [https://eartrumpet.app/jmp/fixfonts] maintenant?</value>
     <value>QuickTrumpet</value>
   </data>
   <data name="QuickTrumpetSettingsPageSubtitle" xml:space="preserve">
-    <value>Enregistrez et appliquez des préréglages audio depuis BetterTrumpet, des raccourcis ou Raycast.</value>
+    <value>Changez de périphériques par défaut et de volumes d’un coup, ici, par raccourci, Raycast ou le CLI bt.</value>
   </data>
   <data name="UpdatesSettingsPageText" xml:space="preserve">
     <value>Mises à jour</value>
@@ -2228,5 +2228,167 @@ Détails : {0}</value>
   </data>
   <data name="AboutReportBug" xml:space="preserve">
     <value>Signaler un bug</value>
+  </data>
+  <data name="QuickTrumpetToastTitleFormat" xml:space="preserve">
+    <value>« {0} » appliqué</value>
+  </data>
+  <data name="QuickTrumpetSummaryEmpty" xml:space="preserve">
+    <value>Préréglage vide</value>
+  </data>
+  <data name="QuickTrumpetSummaryNothing" xml:space="preserve">
+    <value>Rien à changer</value>
+  </data>
+  <data name="QuickTrumpetSummaryMissingFormat" xml:space="preserve">
+    <value>Non connecté : {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryDeviceOne" xml:space="preserve">
+    <value>1 périphérique</value>
+  </data>
+  <data name="QuickTrumpetSummaryDevicesFormat" xml:space="preserve">
+    <value>{0} périphériques</value>
+  </data>
+  <data name="QuickTrumpetSummaryAppOne" xml:space="preserve">
+    <value>1 appli</value>
+  </data>
+  <data name="QuickTrumpetSummaryAppsFormat" xml:space="preserve">
+    <value>{0} applis</value>
+  </data>
+  <data name="QuickTrumpetSummaryPlaybackFormat" xml:space="preserve">
+    <value>Sortie → {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryPlaybackCommsFormat" xml:space="preserve">
+    <value>Sortie appels → {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryRecordingFormat" xml:space="preserve">
+    <value>Micro → {0}</value>
+  </data>
+  <data name="QuickTrumpetSummaryRecordingCommsFormat" xml:space="preserve">
+    <value>Micro appels → {0}</value>
+  </data>
+  <data name="QuickTrumpetRolePlayback" xml:space="preserve">
+    <value>Sortie</value>
+  </data>
+  <data name="QuickTrumpetRolePlaybackComms" xml:space="preserve">
+    <value>Sortie des appels</value>
+  </data>
+  <data name="QuickTrumpetRoleRecording" xml:space="preserve">
+    <value>Microphone</value>
+  </data>
+  <data name="QuickTrumpetRoleRecordingComms" xml:space="preserve">
+    <value>Micro des appels</value>
+  </data>
+  <data name="SettingsQuickTrumpetNextHotkey" xml:space="preserve">
+    <value>Préréglage suivant</value>
+  </data>
+  <data name="SettingsQuickTrumpetPreviousHotkey" xml:space="preserve">
+    <value>Préréglage précédent</value>
+  </data>
+  <data name="WebSettingsHotkeyNextPresetDesc" xml:space="preserve">
+    <value>Applique le préréglage QuickTrumpet suivant, en boucle.</value>
+  </data>
+  <data name="WebSettingsHotkeyPreviousPresetDesc" xml:space="preserve">
+    <value>Applique le préréglage QuickTrumpet précédent, en boucle.</value>
+  </data>
+  <data name="WebSettingsQtPresetsDesc" xml:space="preserve">
+    <value>Un préréglage peut changer la sortie et le micro par défaut, régler le volume des périphériques et celui des applis — dans n’importe quelle combinaison. Appliquez-le ici, avec un raccourci ou avec le CLI bt.</value>
+  </data>
+  <data name="WebSettingsQtNewPreset" xml:space="preserve">
+    <value>Nouveau préréglage</value>
+  </data>
+  <data name="WebSettingsQtNewPresetDesc" xml:space="preserve">
+    <value>Enregistre ce qui est coché ci-dessous, tel quel en ce moment.</value>
+  </data>
+  <data name="WebSettingsQtWhatToSave" xml:space="preserve">
+    <value>Ce que le préréglage enregistre</value>
+  </data>
+  <data name="WebSettingsQtNothingSelected" xml:space="preserve">
+    <value>Cochez au moins un élément à enregistrer.</value>
+  </data>
+  <data name="WebSettingsQtIncludeDefaults" xml:space="preserve">
+    <value>Périphériques par défaut</value>
+  </data>
+  <data name="WebSettingsQtIncludeDefaultsDesc" xml:space="preserve">
+    <value>Change la sortie et le micro utilisés par Windows, par ex. enceintes + micro de bureau ou casque + micro du casque.</value>
+  </data>
+  <data name="WebSettingsQtIncludeDevices" xml:space="preserve">
+    <value>Volume des périphériques</value>
+  </data>
+  <data name="WebSettingsQtIncludeDevicesDesc" xml:space="preserve">
+    <value>Volume et sourdine des sorties que vous cochez.</value>
+  </data>
+  <data name="WebSettingsQtIncludeApps" xml:space="preserve">
+    <value>Volume des applis</value>
+  </data>
+  <data name="WebSettingsQtIncludeAppsDesc" xml:space="preserve">
+    <value>Volume et sourdine de chaque appli du mélangeur.</value>
+  </data>
+  <data name="WebSettingsQtAppsOpenFormat" xml:space="preserve">
+    <value>{0} applis ouvertes en ce moment</value>
+  </data>
+  <data name="WebSettingsQtDevicesCheckedFormat" xml:space="preserve">
+    <value>{0} sur {1} coché(s)</value>
+  </data>
+  <data name="WebSettingsQtChoose" xml:space="preserve">
+    <value>Choisir</value>
+  </data>
+  <data name="WebSettingsQtDontChange" xml:space="preserve">
+    <value>Ne pas changer</value>
+  </data>
+  <data name="WebSettingsQtNotConnected" xml:space="preserve">
+    <value>Non connecté</value>
+  </data>
+  <data name="WebSettingsQtNoDevice" xml:space="preserve">
+    <value>Aucun disponible</value>
+  </data>
+  <data name="WebSettingsQtRouteApps" xml:space="preserve">
+    <value>Renvoyer les applis vers leur périphérique</value>
+  </data>
+  <data name="WebSettingsQtRouteAppsDesc" xml:space="preserve">
+    <value>Épingle chaque appli à la sortie qu’elle utilisait à l’enregistrement : elle ne suivra plus un changement de périphérique par défaut.</value>
+  </data>
+  <data name="WebSettingsQtUpdateFromCurrent" xml:space="preserve">
+    <value>Mettre à jour avec le mix actuel</value>
+  </data>
+  <data name="WebSettingsQtUpdateFromCurrentDesc" xml:space="preserve">
+    <value>Relit les volumes et périphériques actuels pour ce que contient ce préréglage.</value>
+  </data>
+  <data name="WebSettingsQtUpdateConfirm" xml:space="preserve">
+    <value>Écraser les valeurs ?</value>
+  </data>
+  <data name="WebSettingsQtUpdated" xml:space="preserve">
+    <value>Mis à jour</value>
+  </data>
+  <data name="WebSettingsQtAddDevice" xml:space="preserve">
+    <value>Ajouter un périphérique</value>
+  </data>
+  <data name="WebSettingsQtRemoveEntry" xml:space="preserve">
+    <value>Retirer</value>
+  </data>
+  <data name="WebSettingsQtMuteEntry" xml:space="preserve">
+    <value>Sourdine</value>
+  </data>
+  <data name="WebSettingsQtNoDeviceEntries" xml:space="preserve">
+    <value>Aucun volume de périphérique enregistré.</value>
+  </data>
+  <data name="WebSettingsQtNoAppEntries" xml:space="preserve">
+    <value>Aucun volume d’appli enregistré.</value>
+  </data>
+  <data name="WebSettingsQtLastApplied" xml:space="preserve">
+    <value>Dernier appliqué</value>
+  </data>
+  <data name="WebSettingsQtCycleTitle" xml:space="preserve">
+    <value>Parcourir les préréglages</value>
+  </data>
+  <data name="WebSettingsQtCycleDesc" xml:space="preserve">
+    <value>Un seul raccourci passe d’un préréglage à l’autre dans l’ordre de la liste, en boucle.</value>
+  </data>
+  <data name="WebSettingsQtNotificationTitle" xml:space="preserve">
+    <value>Confirmation</value>
+  </data>
+  <data name="WebSettingsQtNotificationDuration" xml:space="preserve">
+    <value>Durée de la notification</value>
+  </data>
+  <data name="WebSettingsQtNotificationDurationDesc" xml:space="preserve">
+    <value>Temps d’affichage de la confirmation.</value>
   </data>
 </root>

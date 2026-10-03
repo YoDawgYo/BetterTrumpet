@@ -142,6 +142,7 @@ namespace EarTrumpet.UI.Controls
             MouseWheel += OnMouseWheel;
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
+            IsVisibleChanged += OnIsVisibleChanged;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -221,6 +222,35 @@ namespace EarTrumpet.UI.Controls
             UpdateTargetFps();
         }
         
+        private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (IsVisible)
+            {
+                // Resume the peak meters if the (still bound) peak values are non-zero.
+                SizeOrVolumeOrPeakValueChanged();
+                return;
+            }
+
+            // The flyout is hidden, not unloaded, when it closes. Peak values stop updating at that
+            // point and keep their last non-zero level if audio was playing, which used to keep this
+            // CompositionTarget.Rendering loop (and with it the WPF render loop) running every frame
+            // for as long as the app lived (GitHub #74). Settle everything and start from empty
+            // meters the next time the slider is shown.
+            CompleteVolumeAnimation();
+            StopAnimation();
+            _hasPeakActivity = false;
+            _currentWidth1 = 0;
+            _currentWidth2 = 0;
+            if (_peakMeter1 != null)
+            {
+                _peakMeter1.Width = 0;
+            }
+            if (_peakMeter2 != null)
+            {
+                _peakMeter2.Width = 0;
+            }
+        }
+
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
             CompleteVolumeAnimation();
@@ -749,8 +779,10 @@ namespace EarTrumpet.UI.Controls
             _targetWidth1 = (ActualWidth - _thumb.ActualWidth) * PeakValue1 * (Value / 100f);
             _targetWidth2 = (ActualWidth - _thumb.ActualWidth) * PeakValue2 * (Value / 100f);
             
-            // Auto-start animation loop when peak values change (conditional rendering optimization)
-            if (_targetWidth1 > 0.1 || _targetWidth2 > 0.1)
+            // Auto-start animation loop when peak values change (conditional rendering optimization).
+            // Never for an invisible slider: a volume/size change while the flyout is hidden would
+            // otherwise restart the loop on stale peak values (see OnIsVisibleChanged).
+            if (IsVisible && (_targetWidth1 > 0.1 || _targetWidth2 > 0.1))
             {
                 StartAnimation();
             }

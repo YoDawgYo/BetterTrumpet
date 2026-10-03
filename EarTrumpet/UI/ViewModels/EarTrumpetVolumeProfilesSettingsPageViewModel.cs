@@ -40,11 +40,8 @@ namespace EarTrumpet.UI.ViewModels
             get
             {
                 if (_selectedProfile == null) return "";
-                var devices = _selectedProfile.Devices?.Count ?? 0;
-                var apps = _selectedProfile.Devices?.Sum(d => d.Apps?.Count ?? 0) ?? 0;
-                var slug = string.IsNullOrWhiteSpace(_selectedProfile.Slug) ? VolumeProfileService.ToSlug(_selectedProfile.Name) : _selectedProfile.Slug;
-                var mode = _selectedProfile.ApplyAppsOnly ? "apps only" : "devices + apps";
-                return $"bt {slug} | {mode} | {devices} device(s), {apps} app(s) | {_selectedProfile.CreatedAt}";
+                var slug = VolumeProfileService.GetSlug(_selectedProfile);
+                return $"bt {slug} | {QuickTrumpetSummary.DescribeProfile(_selectedProfile)} | {_selectedProfile.CreatedAt}";
             }
         }
 
@@ -140,6 +137,102 @@ namespace EarTrumpet.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Reloads the presets when another service instance (hotkeys, CLI, settings
+        /// import) changed them, keeping the selection by id.
+        /// </summary>
+        public void RefreshProfiles()
+        {
+            var selectedId = _selectedProfile?.Id;
+            if (_profileService.RefreshIfStale())
+            {
+                _selectedProfile = _profileService.FindById(selectedId);
+                RaisePropertyChanged(nameof(Profiles));
+                RaisePropertyChanged(nameof(SelectedProfile));
+                RaisePropertyChanged(nameof(HasSelectedProfile));
+                RaisePropertyChanged(nameof(SelectedProfileDetails));
+                RaisePropertyChanged(nameof(SelectedProfileApplyAppsOnly));
+                UpdateSelectedProfileHotkey();
+            }
+        }
+
+        public VolumeProfileService.VolumeProfile FindProfile(string id) => _profileService.FindById(id);
+
+        /// <summary>Web capture: the user chose exactly what the preset holds.</summary>
+        public VolumeProfileService.VolumeProfile CaptureProfile(string name, VolumeProfileService.CaptureOptions options)
+        {
+            var collection = GetCollectionViewModel();
+            if (collection == null) return null;
+
+            name = string.IsNullOrWhiteSpace(name) ? $"Profile {DateTime.Now:yyyy-MM-dd HH:mm}" : name.Trim();
+            var profile = _profileService.Capture(name, collection, options);
+            _profileService.SaveProfile(profile);
+            SelectedProfile = profile;
+            RaisePropertyChanged(nameof(Profiles));
+            Trace.WriteLine($"VolumeProfilesVM: Captured profile '{name}' ({QuickTrumpetSummary.DescribeProfile(profile)})");
+            return profile;
+        }
+
+        public void UpdateProfileFromCurrent(VolumeProfileService.VolumeProfile profile)
+        {
+            var collection = GetCollectionViewModel();
+            if (profile == null || collection == null) return;
+            _profileService.UpdateFromCurrentState(profile, collection);
+            _profileService.CommitEdit(profile);
+            RaiseProfileEdited(profile);
+        }
+
+        public void SetProfileIncludes(VolumeProfileService.VolumeProfile profile, bool? deviceVolumes, bool? appVolumes, bool? routeApps)
+        {
+            if (profile == null) return;
+            if (deviceVolumes.HasValue) profile.IncludeDeviceVolumes = deviceVolumes.Value;
+            if (appVolumes.HasValue) profile.IncludeAppVolumes = appVolumes.Value;
+            if (routeApps.HasValue) profile.RouteApps = routeApps.Value;
+            _profileService.CommitEdit(profile);
+            RaiseProfileEdited(profile);
+        }
+
+        public void SetProfileDeviceEntry(VolumeProfileService.VolumeProfile profile, string deviceId, int? volume, bool? muted)
+        {
+            if (_profileService.SetDeviceEntry(profile, deviceId, volume, muted)) RaiseProfileEdited(profile);
+        }
+
+        public void RemoveProfileDeviceEntry(VolumeProfileService.VolumeProfile profile, string deviceId)
+        {
+            if (_profileService.RemoveDeviceEntry(profile, deviceId)) RaiseProfileEdited(profile);
+        }
+
+        public void AddProfileDeviceEntry(VolumeProfileService.VolumeProfile profile, string deviceId)
+        {
+            if (_profileService.AddDeviceEntry(profile, GetCollectionViewModel(), deviceId)) RaiseProfileEdited(profile);
+        }
+
+        public void SetProfileAppEntry(VolumeProfileService.VolumeProfile profile, string appKey, int? volume, bool? muted)
+        {
+            if (_profileService.SetAppEntry(profile, appKey, volume, muted)) RaiseProfileEdited(profile);
+        }
+
+        public void RemoveProfileAppEntry(VolumeProfileService.VolumeProfile profile, string appKey)
+        {
+            if (_profileService.RemoveAppEntry(profile, appKey)) RaiseProfileEdited(profile);
+        }
+
+        public void SetProfileDefaultDevice(VolumeProfileService.VolumeProfile profile, VolumeProfileService.DefaultDeviceRole role, string deviceId)
+        {
+            if (profile == null) return;
+            _profileService.SetDefaultDevice(profile, role, deviceId);
+            RaiseProfileEdited(profile);
+        }
+
+        private void RaiseProfileEdited(VolumeProfileService.VolumeProfile profile)
+        {
+            if (ReferenceEquals(profile, _selectedProfile))
+            {
+                RaisePropertyChanged(nameof(SelectedProfileDetails));
+                RaisePropertyChanged(nameof(SelectedProfileApplyAppsOnly));
+            }
+        }
+
         private void SaveCurrentProfile()
         {
             var name = string.IsNullOrWhiteSpace(_newProfileName) 
@@ -222,9 +315,7 @@ namespace EarTrumpet.UI.ViewModels
 
             var result = !confirm ? MessageBoxResult.Yes : MessageBox.Show(
                 $"Apply QuickTrumpet preset \"{_selectedProfile.Name}\"?\n\n" +
-                (_selectedProfile.ApplyAppsOnly
-                    ? "This will only change matching app volumes and mute states."
-                    : "This will change matching device and app volumes."),
+                QuickTrumpetSummary.DescribeProfile(_selectedProfile),
                 "Apply QuickTrumpet Preset",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);

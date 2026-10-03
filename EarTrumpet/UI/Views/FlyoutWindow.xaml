@@ -126,6 +126,20 @@
                                   FocusVisualStyle="{x:Null}"
                                   IsTabStop="False"
                                   ItemsSource="{Binding Devices}" />
+                    <!-- Header buttons (restore / pin / expand). The vertical scrollbar overlays the
+                         right edge of the content, so when it is visible the buttons step left out of
+                         its hover zone; otherwise reaching the chevron expands the scrollbar (#70). -->
+                    <Grid x:Name="HeaderButtons" VerticalAlignment="Top">
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Margin" Value="0" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ComputedVerticalScrollBarVisibility, ElementName=BaseVisual}" Value="Visible">
+                                        <Setter Property="Margin" Value="0,0,16,0" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
                     <Button x:Name="RestoreHiddenAppsButton"
                             Width="30"
                             Height="{DynamicResource Mutable_DeviceTitleCellHeight}"
@@ -258,6 +272,7 @@
                             </Grid>
                         </Button.Content>
                     </Button>
+                    </Grid>
                 </Grid>
                 <!-- Update available banner — premium shimmer, in-flow -->
                 <Border x:Name="UpdateBanner"

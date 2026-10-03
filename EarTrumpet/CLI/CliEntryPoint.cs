@@ -189,7 +189,9 @@ namespace EarTrumpet.CLI
             Console.WriteLine("  --apply-profile NAME                    Apply a saved volume profile");
             Console.WriteLine("  presets                                 List QuickTrumpet presets");
             Console.WriteLine("  save NAME [--all-devices] [--apps-only] Save current setup as a QuickTrumpet preset");
+            Console.WriteLine("       [--defaults] [--no-apps] [--no-route]  ...also switch default devices / skip apps / don't pin apps");
             Console.WriteLine("  apply NAME                              Apply a QuickTrumpet preset");
+            Console.WriteLine("  preset next | preset prev               Apply the next/previous preset (wraps around)");
             Console.WriteLine("  NAME                                    Apply a QuickTrumpet preset directly");
             Console.WriteLine("  --watch                                 Snapshot all devices/volumes (JSON)");
             Console.WriteLine("  --check-update                          Check for new version on GitHub");

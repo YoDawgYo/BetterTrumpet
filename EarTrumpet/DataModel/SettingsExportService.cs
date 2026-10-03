@@ -80,10 +80,13 @@ namespace EarTrumpet.DataModel
                 ["SettingsHotkey"] = SerializeHotkey(settings.SettingsHotkey),
                 ["AbsoluteVolumeUpHotkey"] = SerializeHotkey(settings.AbsoluteVolumeUpHotkey),
                 ["AbsoluteVolumeDownHotkey"] = SerializeHotkey(settings.AbsoluteVolumeDownHotkey),
+                ["QuickTrumpetNextHotkey"] = SerializeHotkey(settings.QuickTrumpetNextHotkey),
+                ["QuickTrumpetPreviousHotkey"] = SerializeHotkey(settings.QuickTrumpetPreviousHotkey),
 
                 // Volume Profiles (embedded)
                 ["VolumeProfilesJson"] = settings.VolumeProfilesJson,
                 ["ShowQuickTrumpetConfirmation"] = settings.ShowQuickTrumpetConfirmation,
+                ["QuickTrumpetNotificationSeconds"] = settings.QuickTrumpetNotificationSeconds,
 
                 ["MixerWindowWidth"] = settings.MixerWindowWidth,
                 ["MixerWindowHeight"] = settings.MixerWindowHeight,
@@ -254,6 +257,7 @@ namespace EarTrumpet.DataModel
             TrySet(data, "AutoCheckForUpdates", (bool v) => settings.AutoCheckForUpdates = v);
             TrySet(data, "UpdateNotifyChannel", (int v) => settings.UpdateNotifyChannel = (UpdateChannel)v);
             TrySet(data, "ShowQuickTrumpetConfirmation", (bool v) => settings.ShowQuickTrumpetConfirmation = v);
+            TrySet(data, "QuickTrumpetNotificationSeconds", (int v) => settings.QuickTrumpetNotificationSeconds = v);
             TrySet(data, "MixerWindowWidth", (double v) => settings.MixerWindowWidth = v);
             TrySet(data, "MixerWindowHeight", (double v) => settings.MixerWindowHeight = v);
             TrySet(data, "NotifyOnDefaultDeviceChange", (bool v) => settings.NotifyOnDefaultDeviceChange = v);
@@ -268,6 +272,8 @@ namespace EarTrumpet.DataModel
             TrySetHotkey(data, "SettingsHotkey", h => settings.SettingsHotkey = h);
             TrySetHotkey(data, "AbsoluteVolumeUpHotkey", h => settings.AbsoluteVolumeUpHotkey = h);
             TrySetHotkey(data, "AbsoluteVolumeDownHotkey", h => settings.AbsoluteVolumeDownHotkey = h);
+            TrySetHotkey(data, "QuickTrumpetNextHotkey", h => settings.QuickTrumpetNextHotkey = h);
+            TrySetHotkey(data, "QuickTrumpetPreviousHotkey", h => settings.QuickTrumpetPreviousHotkey = h);
 
             // Volume Profiles
             TrySet(data, "VolumeProfilesJson", (string v) => settings.VolumeProfilesJson = v);

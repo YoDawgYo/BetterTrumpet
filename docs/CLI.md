@@ -83,6 +83,8 @@ BetterTrumpet.exe --set-default "Headphones"
 | `--list-profiles` | List saved volume profiles | Yes |
 | `--apply-profile <name>` | Apply a saved volume profile | Yes |
 | `mode <name>` | Apply a QuickTrumpet preset by mode name | Yes |
+| `save <name> [flags]` | Save the current setup as a QuickTrumpet preset | Yes |
+| `preset next` / `preset prev` | Apply the next/previous QuickTrumpet preset | Yes |
 | `--watch` | Snapshot all devices/apps with timestamp | Yes |
 
 ---
@@ -453,6 +455,12 @@ BetterTrumpet.exe --set-device spotify "Kopfhörer"
 
 List all saved QuickTrumpet presets. `bt presets` is the preferred modern alias.
 
+A preset can hold any mix of three parts:
+
+- **Default devices**: the Windows default output, calls (communications) output, microphone and calls microphone.
+- **Device volumes**: volume and mute of the output devices chosen when saving.
+- **App volumes**: volume and mute of each app, optionally pinned back to the device it was playing on (`routeApps`).
+
 ```
 BetterTrumpet.exe --list-profiles
 bt presets
@@ -461,23 +469,28 @@ bt presets
 ```json
 [
   {
-    "name": "Night Mode",
-    "devices": 3,
-    "createdAt": "2025-12-01T22:30:00Z"
-  },
-  {
-    "name": "Gaming",
-    "devices": 2,
-    "createdAt": "2025-11-15T14:00:00Z"
+    "name": "Desk",
+    "slug": "desk",
+    "devices": 1,
+    "apps": 3,
+    "createdAt": "2026-10-03 21:40",
+    "summary": "Speakers + Desk mic · 1 device · 3 apps",
+    "includeDeviceVolumes": true,
+    "includeAppVolumes": true,
+    "routeApps": false,
+    "defaults": { "output": "Speakers", "outputCalls": "Speakers", "mic": "Desk mic", "micCalls": "Desk mic" },
+    "lastApplied": true
   }
 ]
 ```
+
+`devices` counts the devices whose volume the preset applies; `defaults` only lists the slots the preset switches.
 
 ---
 
 ### `--apply-profile`
 
-Apply a saved QuickTrumpet preset. Restores device/app volumes and routes matching apps back to their captured device where possible.
+Apply a saved QuickTrumpet preset. Default devices are switched first, then device volumes, then app volumes. Devices that are not connected are skipped and reported in `devicesMissing`.
 
 ```
 BetterTrumpet.exe --apply-profile "Night Mode"
@@ -488,21 +501,51 @@ bt focus
 ```json
 {
   "ok": true,
-  "profile": "Night Mode",
-  "devicesRestored": 3,
-  "appsRestored": 7
+  "preset": "Desk",
+  "slug": "desk",
+  "defaultsApplied": [
+    { "role": "output", "name": "Speakers", "id": "{0.0.0.00000000}.{...}" },
+    { "role": "mic", "name": "Desk mic", "id": "{0.0.1.00000000}.{...}" }
+  ],
+  "devicesApplied": 1,
+  "devicesMissing": [],
+  "appsApplied": 3,
+  "appsMissing": 0,
+  "appsRouted": 0,
+  "summary": "Output → Speakers · Mic → Desk mic · 1 device · 3 apps",
+  "warnings": []
 }
+```
+
+### `bt preset next` / `bt preset prev`
+
+Apply the next (or previous) preset in list order, wrapping around, starting from the last applied preset. Same JSON as `apply`. The direct forms are `preset-next` and `preset-prev`; the same action is available as global shortcuts in Settings → QuickTrumpet.
+
+```powershell
+bt preset next
+bt preset prev
 ```
 
 ### `bt save`
 
-Save the current default device and its apps as a QuickTrumpet preset. Use `--all-devices` to capture every device at once, or `--apps-only` when the preset should leave device volume/mute untouched.
+Save the current default device and its apps as a QuickTrumpet preset.
+
+| Flag | Effect |
+|---|---|
+| `--all-devices` | Save the volume of every output device (and every app) instead of only the default device |
+| `--apps-only` | Do not apply device volumes; only app volumes |
+| `--defaults` | Also save the current default output, calls output, microphone and calls microphone, so applying switches them back |
+| `--no-apps` | Do not apply app volumes |
+| `--no-route` | Do not pin apps back to the device they were playing on |
 
 ```powershell
 bt save focus
 bt save discord --apps-only
 bt save streaming --all-devices
+bt save headset --defaults --no-route
 ```
+
+Settings → QuickTrumpet offers the same choices with a device checklist, and lets you view and edit every saved value afterwards.
 
 Raycast can run the direct alias form, for example `bt focus`, to apply the `focus` preset.
 

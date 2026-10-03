@@ -900,7 +900,17 @@ namespace EarTrumpet.UI.Views
             if (_cachedTextWidth > ContainerWidth)
             {
                 _marqueePosition = 0;
-                _marqueeTimer.Start();
+                // Playback/track events also land here while the popup is hidden; a 50 ms
+                // marquee on an invisible window would tick forever (GitHub #74).
+                // ShowPopup calls this again once _isShowing is set.
+                if (_isShowing)
+                {
+                    _marqueeTimer.Start();
+                }
+                else
+                {
+                    _marqueeTimer.Stop();
+                }
             }
             else
             {
